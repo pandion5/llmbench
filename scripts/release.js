@@ -72,7 +72,7 @@ console.log('update.json 작성');
 
 if (publish) {
   sh('gh', ['release', 'create', `v${version}`, updateZip, portableZip, path.join(DIST, 'update.json'),
-    '--repo', REPO, '--title', `llmbench v${version}`, '--notes', notes || `v${version}`], { shell: true });
+    '--repo', REPO, '--title', `llmbench v${version}`, '--notes', notes || `v${version}`]);
   console.log(`GitHub Release v${version} 게시`);
 } else {
   console.log('게시하려면 --publish 를 붙인다.');
