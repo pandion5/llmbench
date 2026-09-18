@@ -1,0 +1,12 @@
+{
+  "installDir": "E:\\llm\\qwen",
+  "quant": "UD-IQ3_XXS",
+  "threads": 8,
+  "ctx": 65536,
+  "kwhPrice": 150,
+  "autoLoad36": false,
+  "ncmoe38": 99,
+  "poll": 50,
+  "cpuMask": "",
+  "mtp": false
+}

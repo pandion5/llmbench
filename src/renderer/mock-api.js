@@ -498,6 +498,11 @@
     },
     config: {
       get: function () { return Promise.resolve(Object.assign({}, config)); },
+      export: function () { return Promise.resolve({ path: 'C:\\Users\\mock\\Documents\\llmbench-config-MOCK.json', error: null }); },
+      import: function () {
+        Object.assign(config, { installDir: 'E:\\llm\\qwen', quant: 'UD-IQ3_XXS', autoLoad36: false, mtp: true });
+        return Promise.resolve({ config: Object.assign({}, config), path: 'C:\\Users\\mock\\Documents\\llmbench-config-DESKTOP-EDJAJK2.json', error: null });
+      },
       set: function (partial) {
         Object.assign(config, partial);
         return Promise.resolve(Object.assign({}, config));

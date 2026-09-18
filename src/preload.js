@@ -11,7 +11,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   config: {
     get: () => call('config:get'),
-    set: (partial) => call('config:set', partial)
+    set: (partial) => call('config:set', partial),
+    export: () => call('config:export'),
+    import: () => call('config:import')
   },
   install: {
     start: (opts) => call('install:start', opts),

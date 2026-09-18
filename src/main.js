@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
@@ -130,6 +130,36 @@ function registerIpc() {
 
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:set', (_e, partial) => config.set(partial));
+
+  // 설정 파일 내보내기·가져오기. 다른 PC에 같은 설정을 옮길 때 쓴다.
+  // 가져온 값은 config.set을 거치므로 잘못된 값은 걸러진다.
+  ipcMain.handle('config:export', async (e) => {
+    const cfg = await config.get();
+    const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+      title: '설정 내보내기',
+      defaultPath: path.join(app.getPath('documents'), `llmbench-config-${os.hostname()}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (r.canceled || !r.filePath) return { path: null, error: null };
+    await fsp.writeFile(r.filePath, JSON.stringify(cfg, null, 2), 'utf8');
+    return { path: r.filePath, error: null };
+  });
+  ipcMain.handle('config:import', async (e) => {
+    const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
+      title: '설정 가져오기',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (r.canceled || !r.filePaths.length) return { config: null, path: null, error: null };
+    try {
+      const raw = JSON.parse(await fsp.readFile(r.filePaths[0], 'utf8'));
+      if (!raw || typeof raw !== 'object') throw new Error('JSON 객체가 아님');
+      const cfg = await config.set(raw);
+      return { config: cfg, path: r.filePaths[0], error: null };
+    } catch (err) {
+      return { config: null, path: r.filePaths[0], error: err.message };
+    }
+  });
 
   ipcMain.handle('install:start', async (_e, opts) => {
     const cfg = await config.get();

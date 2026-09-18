@@ -289,6 +289,27 @@
     $('#cfg-cpuMask').value = cfg.cpuMask || '';
   }
 
+  $('#config-export').addEventListener('click', function () {
+    window.api.config.export().then(function (r) {
+      setText('#config-msg', r.path ? '내보냈다: ' + r.path : '취소했다.');
+    });
+  });
+
+  $('#config-import').addEventListener('click', function () {
+    window.api.config.import().then(function (r) {
+      if (r.error) {
+        setText('#config-msg', '가져오지 못했다: ' + r.error);
+        return;
+      }
+      if (!r.config) {
+        setText('#config-msg', '취소했다.');
+        return;
+      }
+      fillConfigForm(r.config);
+      setText('#config-msg', '가져와서 저장했다: ' + r.path + '. 설치를 다시 실행하면 반영된다.');
+    });
+  });
+
   $('#config-form').addEventListener('submit', function (ev) {
     ev.preventDefault();
     var partial = {

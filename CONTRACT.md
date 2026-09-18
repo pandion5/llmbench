@@ -30,6 +30,8 @@ HwInfo = {
 
 ### 설정 (config)
 - `api.config.get()` → `Config`
+- `api.config.export()` → `{ path: string|null, error }`  저장 대화상자로 현재 설정을 JSON으로 쓴다. 취소면 path null.
+- `api.config.import()` → `{ config: Config|null, path, error }`  열기 대화상자로 JSON을 읽어 config.set에 넣는다. 잘못된 값은 걸러진다.
 - `api.config.set(partial)` → `Config`
 ```ts
 Config = {
