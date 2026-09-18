@@ -144,7 +144,8 @@ Verdict = {
   quantDownReaches: boolean,          // 양자화만 낮춰 20 도달하는가
   actions: string[]                   // 사람이 읽는 처방 1~4줄. 예: "3.6 자동 로드 해제(RAM 21GB 확보)", "RAM 대역폭 1.4배 필요: DDR5-6000 듀얼 이상", "전문가 VRAM 캐시 포크(5070Ti 43 tok/s 보고)"
 }
-BenchRun = { prompt: string, promptTokens: number, genTokens: number, promptTokPerSec: number, genTokPerSec: number, seconds: number, avgPowerW: number, wh: number }
+BenchRun = { prompt: string, promptTokens: number, genTokens: number, promptTokPerSec: number, genTokPerSec: number, seconds: number, avgPowerW: number, wh: number, timingsSource: 'server'|'client', answer: string, truncated: boolean }
+// answer는 답변 전문(화면 '답변 전문' 카드와 JSON에 그대로). max_tokens 2048, truncated는 그 상한에 걸린 경우.
 ```
 tok/s는 llama-server 응답의 `timings`(prompt_per_second, predicted_per_second) 사용. 스트리밍 요청은 body에 `timings_per_token: true`를 넣어야 마지막 청크에 timings가 실린다. timings가 없으면 클라이언트 측 측정값으로 대체하고 BenchRun.timingsSource='client'로 표기(있으면 'server'). 전력은 벤치 중 `nvidia-smi --query-gpu=power.draw` 1초 샘플 평균.
 - `api.bench.export()` → `{ path: string }`  마지막 결과를 앱 폴더 `logs/bench-logs/<COMPUTERNAME>-bench-<ts>.json`으로 저장하고 경로 반환. 앱 폴더에 쓸 수 없으면 `userData/logs/bench-logs`.

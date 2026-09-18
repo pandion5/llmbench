@@ -366,7 +366,9 @@
               avgPowerW: avgPowerW,
               wh: avgPowerW * seconds / 3600,
               // 두 번째 프롬프트만 timings가 빠진 상황을 흉내낸다.
-              timingsSource: idx === 1 ? 'client' : 'server'
+              timingsSource: idx === 1 ? 'client' : 'server',
+              answer: text,
+              truncated: false
             });
             resolve();
           }

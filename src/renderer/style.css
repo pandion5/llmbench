@@ -336,7 +336,13 @@ main { padding: 16px; max-width: 1100px; }
   word-break: break-all;
 }
 
-.log-stream { height: 180px; }
+.log-stream { height: 320px; }
+
+/* 체감 벤치 답변 전문 */
+.answer { margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; }
+.answer summary { cursor: pointer; padding: 8px 12px; font-weight: 600; }
+.answer pre { margin: 0; padding: 12px; white-space: pre-wrap; word-break: break-word; max-height: 600px; overflow: auto; font-size: 13px; line-height: 1.5; }
+.answer .answer-meta { font-weight: 400; color: var(--fg-dim); margin-left: 8px; }
 
 /* 대시보드 숫자 카드 */
 .metrics {

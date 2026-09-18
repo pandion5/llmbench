@@ -14,7 +14,8 @@ const BUILTIN_PROMPTS = [
   'Python으로 CSV 파일을 읽어 열별 평균을 출력하는 함수 작성',
   '다음 요구사항으로 REST API를 설계하라: 사용자, 게시글, 댓글. 엔드포인트와 데이터 모델을 표로'
 ];
-const MAX_TOKENS = 512;
+// 답변이 잘리지 않게 넉넉히 둔다. 모델이 끝내면 그 전에 멈춘다.
+const MAX_TOKENS = 2048;
 const TEMPERATURE = 0.7;
 
 let controller = null;
@@ -155,7 +156,10 @@ async function runOne(prompt, model, idx, total, baseUrl) {
     avgPowerW,
     avgUtilPct,
     wh: round((avgPowerW * seconds) / 3600, 3),
-    timingsSource: hasTimings ? 'server' : 'client'
+    timingsSource: hasTimings ? 'server' : 'client',
+    // 답변 전문. 결과 화면과 JSON에 그대로 남긴다. 출력이 깨지는지 눈으로 확인하는 용도.
+    answer: text,
+    truncated: hasTimings ? timings.predicted_n >= MAX_TOKENS : tokens >= MAX_TOKENS
   };
 }
 

@@ -675,6 +675,7 @@
   function renderBenchResult(result) {
     state.benchResult = result;
     $('#bench-tuning-card').hidden = result.mode !== 'tuning';
+    $('#bench-answers-card').hidden = true;
     $('#bench-verdict-card').hidden = true;
     if (result.mode === 'tuning') {
       $('#bench-table').hidden = true;
@@ -708,6 +709,29 @@
       tbody.appendChild(tr);
     });
     $('#bench-table').hidden = result.mode === 'standard';
+
+    // 체감 모드는 답변 전문을 프롬프트별로 펼쳐 볼 수 있게 둔다
+    var answers = $('#bench-answers');
+    answers.textContent = '';
+    var hasAnswers = result.runs.some(function (r) { return typeof r.answer === 'string'; });
+    result.runs.forEach(function (run, i) {
+      if (typeof run.answer !== 'string') return;
+      var det = document.createElement('details');
+      det.className = 'answer';
+      if (i === 0) det.open = true;
+      var sum = document.createElement('summary');
+      sum.textContent = run.prompt;
+      var meta = document.createElement('span');
+      meta.className = 'answer-meta';
+      meta.textContent = run.genTokens + '토큰 · ' + num(run.genTokPerSec, 1) + ' tok/s' + (run.truncated ? ' · 상한에 걸려 잘림' : '');
+      sum.appendChild(meta);
+      var pre = document.createElement('pre');
+      pre.textContent = run.answer;
+      det.appendChild(sum);
+      det.appendChild(pre);
+      answers.appendChild(det);
+    });
+    $('#bench-answers-card').hidden = !hasAnswers;
 
     var s = result.summary;
     var cards = result.mode === 'standard' ? [
