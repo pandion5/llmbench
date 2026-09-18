@@ -51,13 +51,13 @@ fs.mkdirSync(DIST, { recursive: true });
 
 // 업데이트 zip. Windows 내장 tar(bsdtar)는 -a로 확장자에 맞춰 zip을 만든다.
 const updateZip = path.join(DIST, `llmbench-update-${version}.zip`);
-sh(TAR, ['-a', '-cf', updateZip, 'src', 'package.json', 'README.md', 'CONTRACT.md', 'start.bat']);
+sh(TAR, ['-a', '-cf', updateZip, 'src', 'package.json', 'README.md', 'CONTRACT.md', 'start.bat', 'llmbench.vbs']);
 const sum = sha256(updateZip);
 console.log(`${path.basename(updateZip)} ${(fs.statSync(updateZip).size / 1024).toFixed(0)}KB sha256 ${sum}`);
 
 // 처음 설치용 포터블 zip
 const portableZip = path.join(DIST, `llmbench-portable-${version}.zip`);
-sh(TAR, ['-a', '-cf', portableZip, 'src', 'package.json', 'package-lock.json', 'README.md', 'CONTRACT.md', 'start.bat', 'build', 'node_modules']);
+sh(TAR, ['-a', '-cf', portableZip, 'src', 'package.json', 'package-lock.json', 'README.md', 'CONTRACT.md', 'start.bat', 'llmbench.vbs', 'build', 'node_modules']);
 console.log(`${path.basename(portableZip)} ${(fs.statSync(portableZip).size / 1048576).toFixed(0)}MB`);
 
 const manifest = {

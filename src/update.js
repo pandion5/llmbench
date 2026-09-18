@@ -146,8 +146,10 @@ function applyScript(appDir, staging, pid) {
     'if exist "%STG%\\README.md" copy /Y "%STG%\\README.md" "%APP%\\README.md" >nul',
     'if exist "%STG%\\CONTRACT.md" copy /Y "%STG%\\CONTRACT.md" "%APP%\\CONTRACT.md" >nul',
     'if exist "%STG%\\start.bat" copy /Y "%STG%\\start.bat" "%APP%\\start.bat" >nul',
+    'if exist "%STG%\\llmbench.vbs" copy /Y "%STG%\\llmbench.vbs" "%APP%\\llmbench.vbs" >nul',
     'rmdir /S /Q "%STG%" >nul 2>nul',
-    'start "" "%APP%\\start.bat"',
+    // 콘솔 창 없이 다시 띄운다. vbs가 없으면 start.bat.
+    'if exist "%APP%\\llmbench.vbs" (wscript "%APP%\\llmbench.vbs") else (start "" "%APP%\\start.bat")',
     'exit /b 0',
     ':fail',
     'echo 업데이트 파일 복사에 실패했다. %STG% 내용을 %APP%에 직접 복사한다.',

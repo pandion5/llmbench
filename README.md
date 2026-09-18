@@ -9,6 +9,8 @@ npm install
 npm start
 ```
 
+포터블 폴더에서는 `llmbench.vbs`를 더블클릭한다. 콘솔 창 없이 뜬다. `start.bat`도 같은 일을 하지만 콘솔 창이 잠깐 보인다.
+
 관리자 권한이 아니면 UAC 창을 띄워 자기 자신을 다시 실행한다. 개발 중 승격을 건너뛰려면 `LLMBENCH_NO_ELEVATE=1`을 준다.
 
 ## 화면

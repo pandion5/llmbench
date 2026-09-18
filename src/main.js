@@ -188,8 +188,21 @@ function startMonitor() {
   }, 1000);
 }
 
+// 콘솔 창 없이 띄우는 런처. 구버전 업데이트 배치는 이 파일을 복사하지 않으므로 없으면 앱이 만든다.
+async function ensureLauncher() {
+  if (app.isPackaged) return;
+  const file = path.join(app.getAppPath(), 'llmbench.vbs');
+  if (fs.existsSync(file)) return;
+  try {
+    await fsp.copyFile(path.join(__dirname, 'launcher.vbs'), file);
+  } catch (e) {
+    console.error('llmbench.vbs를 만들지 못함:', e.message);
+  }
+}
+
 app.whenReady().then(async () => {
   if (!(await ensureAdmin())) return;
+  await ensureLauncher();
   registerIpc();
   createWindow();
   startMonitor();
