@@ -46,6 +46,7 @@
     ctx: 65536,
     kwhPrice: 150,
     autoLoad36: true,
+    mtp: false,
     ncmoe38: 99,
     poll: 50,
     cpuMask: ''

@@ -283,6 +283,7 @@
     $('#cfg-ctx').value = cfg.ctx;
     $('#cfg-kwhPrice').value = cfg.kwhPrice;
     $('#cfg-autoLoad36').checked = cfg.autoLoad36 !== false;
+    $('#cfg-mtp').checked = cfg.mtp === true;
     $('#cfg-ncmoe38').value = cfg.ncmoe38;
     $('#cfg-poll').value = cfg.poll;
     $('#cfg-cpuMask').value = cfg.cpuMask || '';
@@ -297,6 +298,7 @@
       ctx: Number($('#cfg-ctx').value),
       kwhPrice: Number($('#cfg-kwhPrice').value),
       autoLoad36: $('#cfg-autoLoad36').checked,
+      mtp: $('#cfg-mtp').checked,
       ncmoe38: Number($('#cfg-ncmoe38').value),
       poll: Number($('#cfg-poll').value),
       cpuMask: $('#cfg-cpuMask').value.trim()

@@ -18,6 +18,12 @@ const FILE_36 = 'Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf';
 const CUDA_ASSET_RE = /^llama-.*-bin-win-cuda-(\d+\.\d+)-x64\.zip$/;
 // CUDA 13.x는 드라이버 580 이상, 12.x는 525 이상이 필요하다.
 const CUDA_MIN_DRIVER = { 13: 580, 12: 525 };
+// MTP는 본가에 아직 안 들어갔다(PR ggml-org#28243 미병합). unsloth 포크 프리빌드를 쓴다.
+// 자산 이름: app-<tag>-windows-x64-cuda12-portable.zip. portable은 전 GPU 세대 커널 포함.
+const UNSLOTH_ASSET_RE = /^app-.*-windows-x64-cuda(\d+)-portable\.zip$/;
+const MTP_FILE = 'MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf';
+// bin 폴더가 어느 빌드인지 남긴다. MTP 설정을 바꾸면 빌드를 갈아야 하므로 이 파일로 판단한다.
+const BUILD_INFO = 'llmbench-build.json';
 // 다운로드가 진전 없이 연속 실패할 수 있는 횟수
 const MAX_RETRY = 8;
 
@@ -360,6 +366,81 @@ async function pickRelease(driverVersion) {
   throw new Error(`최근 릴리스에 드라이버 ${driverVersion || '?'}가 지원하는 윈도우 CUDA 빌드가 없음`);
 }
 
+// unsloth 포크 최신 릴리스에서 드라이버에 맞는 windows cuda portable 자산을 고른다.
+async function pickUnslothRelease(driverVersion) {
+  const driverMajor = parseInt(String(driverVersion || '0'), 10) || 0;
+  const rels = await getJson('https://api.github.com/repos/unslothai/llama.cpp/releases?per_page=5');
+  if (!Array.isArray(rels)) {
+    throw new Error(`unsloth 릴리스 조회 실패: ${(rels && rels.message) || '응답 형식 이상'}`);
+  }
+  for (const r of rels) {
+    const candidates = [];
+    for (const a of r.assets || []) {
+      const m = UNSLOTH_ASSET_RE.exec(a.name);
+      if (!m) continue;
+      const cudaMajor = parseInt(m[1], 10);
+      const supported = driverMajor === 0 ? cudaMajor === 12 : driverMajor >= (CUDA_MIN_DRIVER[cudaMajor] || Infinity);
+      if (supported) candidates.push({ cuda: String(cudaMajor), asset: a });
+    }
+    if (candidates.length) {
+      candidates.sort((x, y) => parseFloat(y.cuda) - parseFloat(x.cuda));
+      return { release: r, ...candidates[0] };
+    }
+  }
+  throw new Error(`unsloth 릴리스에 드라이버 ${driverVersion || '?'}가 지원하는 윈도우 CUDA 빌드가 없음`);
+}
+
+// zip 안 어디에 있든 llama-server.exe가 있는 폴더를 찾는다
+async function findServerDir(root) {
+  const stack = [root];
+  while (stack.length) {
+    const d = stack.pop();
+    const entries = await fsp.readdir(d, { withFileTypes: true }).catch(() => []);
+    if (entries.some((e) => e.isFile() && e.name.toLowerCase() === 'llama-server.exe')) return d;
+    for (const e of entries) if (e.isDirectory()) stack.push(path.join(d, e.name));
+  }
+  return null;
+}
+
+async function downloadUnsloth(binDir, onTick, driverVersion) {
+  const pick = await pickUnslothRelease(driverVersion);
+  const tag = pick.release.tag_name;
+  log(`   unsloth 릴리스 ${tag}, CUDA ${pick.cuda} (MTP 지원)`);
+  const zip = path.join(os.tmpdir(), pick.asset.name);
+  log(`   ${pick.asset.name}`);
+  await download(pick.asset.browser_download_url, zip, (got, total, bps) => {
+    if (onTick) onTick(0, 2, got, total, bps);
+  });
+  const tmp = path.join(os.tmpdir(), `llmbench-unsloth-${Date.now()}`);
+  await extractZip(zip, tmp);
+  await fsp.unlink(zip).catch(() => {});
+  const srcDir = await findServerDir(tmp);
+  if (!srcDir) throw new Error('unsloth zip 안에서 llama-server.exe를 못 찾음');
+  await fsp.rm(binDir, { recursive: true, force: true });
+  await fsp.cp(srcDir, binDir, { recursive: true });
+  await fsp.rm(tmp, { recursive: true, force: true });
+
+  // unsloth zip에는 cudart·cublas DLL이 없어 GPU를 못 잡는다(--list-devices가 none). 본가 릴리스의
+  // cudart zip을 같은 폴더에 풀어 넣는다. 본가와 같은 규칙으로 고르므로 CUDA 주버전이 맞는다.
+  const up = await pickRelease(driverVersion);
+  log(`   CUDA 런타임: ${up.cudart.name} (본가 ${up.release.tag_name})`);
+  const czip = path.join(os.tmpdir(), up.cudart.name);
+  await download(up.cudart.browser_download_url, czip, (got, total, bps) => {
+    if (onTick) onTick(1, 2, got, total, bps);
+  });
+  await extractZip(czip, binDir);
+  await fsp.unlink(czip).catch(() => {});
+  return tag;
+}
+
+async function readBuildInfo(binDir) {
+  try {
+    return JSON.parse(await fsp.readFile(path.join(binDir, BUILD_INFO), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 // 윈도우 10 이상의 내장 tar가 zip을 푼다. 실패하면 Expand-Archive로 재시도.
 // 경로는 명령 문자열에 넣지 않고 환경변수로 넘긴다. 문자열로 조립하면 경로에 들어간
 // 따옴표나 세미콜론이 powershell 명령으로 해석될 수 있다.
@@ -403,20 +484,32 @@ async function downloadLlamaCpp(binDir, onTick, driverVersion) {
 
 async function stepLlamaCpp(cfg) {
   const bin = path.join(cfg.installDir, 'bin');
-  if (fs.existsSync(path.join(bin, 'llama-server.exe'))) {
-    setStep('llamacpp', { status: 'skipped', detail: '이미 설치됨' });
+  const want = cfg.mtp ? 'unsloth' : 'upstream';
+  const have = await readBuildInfo(bin);
+  const haveSource = have ? have.source : fs.existsSync(path.join(bin, 'llama-server.exe')) ? 'upstream' : null;
+  if (haveSource === want) {
+    setStep('llamacpp', { status: 'skipped', detail: `이미 설치됨 (${want}${have && have.tag ? ' ' + have.tag : ''})` });
     return;
   }
+  if (haveSource) log(`   빌드 교체: ${haveSource} → ${want}`);
   setStep('llamacpp', { status: 'running', percent: 0, detail: '릴리스 확인 중' });
   const gpu = await sys.queryGpu().catch(() => null);
-  const tag = await downloadLlamaCpp(bin, (idx, count, got, total, bps) => {
+  const onTick = (idx, count, got, total, bps) => {
     const pct = total ? (got / total) * 100 : 0;
     setStep('llamacpp', {
       percent: Math.round((idx * 100 + pct) / count),
       detail: `${fmtGB(got)} / ${total ? fmtGB(total) : '?'}  ${fmtMBps(bps)}`
     });
-  }, gpu && gpu.driver);
-  setStep('llamacpp', { status: 'done', percent: 100, detail: tag });
+  };
+  let tag;
+  if (want === 'unsloth') {
+    tag = await downloadUnsloth(bin, onTick, gpu && gpu.driver);
+  } else {
+    await fsp.rm(bin, { recursive: true, force: true });
+    tag = await downloadLlamaCpp(bin, onTick, gpu && gpu.driver);
+  }
+  await fsp.writeFile(path.join(bin, BUILD_INFO), JSON.stringify({ source: want, tag }), 'utf8');
+  setStep('llamacpp', { status: 'done', percent: 100, detail: `${want} ${tag}` });
 }
 
 // ---------- 2~3. 모델 ----------
@@ -470,7 +563,8 @@ async function allFilesPresent(localDir, files) {
 // CLI 모듈 경로가 버전마다 바뀌는 문제도 피한다. 부분 파일은 Range로 이어받는다.
 async function hfDownload(stepId, repo, folder, fileName, localDir) {
   const files = await hfTree(repo, folder);
-  const wanted = fileName ? files.filter((f) => f.path === fileName) : files;
+  // folder 하위 파일은 path가 'folder/파일'로 오므로 끝부분으로 비교한다
+  const wanted = fileName ? files.filter((f) => f.path === fileName || f.path.endsWith('/' + fileName)) : files;
   if (!wanted.length) throw new Error(`${repo}에서 받을 파일을 못 찾음`);
   const totalBytes = wanted.reduce((a, f) => a + f.size, 0);
 
@@ -519,6 +613,10 @@ async function hfDownload(stepId, repo, folder, fileName, localDir) {
 async function stepModels(cfg) {
   const models = path.join(cfg.installDir, 'models');
   await hfDownload('model38', REPO_38, cfg.quant, null, path.join(models, 'qwen38'));
+  if (cfg.mtp) {
+    // MTP 헤드는 저장소 MTP/ 폴더에 따로 있다. 양자화와 무관하게 하나만 쓴다.
+    await hfDownload('model38', REPO_38, 'MTP', path.basename(MTP_FILE), path.join(models, 'qwen38', 'MTP'));
+  }
   await hfDownload('model36', REPO_36, null, FILE_36, path.join(models, 'qwen36'));
 }
 
@@ -538,6 +636,9 @@ async function stepPreset(cfg) {
   const m38 = await findShard(path.join(models, 'qwen38', cfg.quant));
   const m36 = path.join(models, 'qwen36', FILE_36);
   if (!m38 || !fs.existsSync(m36)) throw new Error('모델 파일을 못 찾음');
+  if (cfg.mtp && !fs.existsSync(path.join(models, 'qwen38', 'MTP', path.basename(MTP_FILE)))) {
+    throw new Error('MTP 사이드카 파일을 못 찾음');
+  }
 
   // 3.8은 MoE 전문가 전체를 CPU RAM에, 3.6은 20GB라 일부만 CPU로 내린다
   const ini = [
@@ -564,6 +665,12 @@ async function stepPreset(cfg) {
     '[qwen38]',
     `model = ${m38}`,
     `n-cpu-moe = ${cfg.ncmoe38}`,
+    // MTP 드래프트. 헤드는 GPU에 두고 초안 2개까지 검증한다. unsloth 빌드에서만 인식된다.
+    ...(cfg.mtp ? [
+      `model-draft = ${path.join(models, 'qwen38', 'MTP', path.basename(MTP_FILE))}`,
+      'spec-type = draft-mtp',
+      'spec-draft-n-max = 2'
+    ] : []),
     'load-on-startup = true',
     '',
     '[qwen36]',
@@ -702,6 +809,8 @@ module.exports = {
   findShard,
   pickRelease,
   hfTree,
+  pickUnslothRelease,
+  findServerDir,
   downloadParallel,
   readParts,
   STEP_DEFS

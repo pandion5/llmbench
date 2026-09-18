@@ -91,6 +91,9 @@
           <input type="text" id="cfg-cpuMask" name="cpuMask" spellcheck="false" placeholder="비우면 안 씀. 예: 0xFFFF">
           <span class="hint">llama-server --cpu-mask. 하이브리드 CPU에서 P코어만 쓰게 할 때 넣는다. 튜닝 모드 결과를 적용하면 자동으로 채워진다.</span>
 
+          <label for="cfg-mtp">MTP 드래프트</label>
+          <span><input type="checkbox" id="cfg-mtp" name="mtp"> 3.8의 내장 MTP 헤드로 초안을 뽑아 생성을 빠르게 한다. 켜면 llama.cpp를 unsloth 빌드로 바꿔 받고(약 340MB) MTP 파일(2.6GB)을 추가로 받는다. VRAM을 2.6GB 더 쓴다. 효과는 체감 벤치로 잰다(llama-bench는 드래프트 미지원).</span>
+
           <label for="cfg-autoLoad36">3.6 자동 로드</label>
           <span><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36"> 서버 시작 시 Qwen3.6도 같이 올린다. RAM이 두 모델 합계(Q4 기준 125GB)보다 작으면 끈다. 바꾼 뒤 설치를 다시 실행해야 models.ini에 반영된다.</span>
 

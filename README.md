@@ -16,7 +16,7 @@ npm start
 ## 화면
 
 - 점검: GPU, VRAM, RAM, 설치 드라이브 여유·SSD 여부·속도, Node, 드라이버, 관리자 권한을 확인한다. fail이 있으면 설치 버튼이 막히고, warn만 있으면 확인 후 진행한다. 드라이브 목록에서 설치 위치를 고를 수 있고, RAM은 속도·모듈 수·추정 대역폭까지 보여준다. 결과는 앱 폴더 `logs/spec-logs/<컴퓨터이름>-spec.json`에 저장한다. 앱 폴더에 쓸 수 없으면 `%APPDATA%\llmbench\logs\spec-logs`에 저장한다.
-- 설치: 설치 경로, 양자화, 스레드 수, 컨텍스트, 전기요금 단가, 3.6 자동 로드 여부, 3.8 CPU 전문가 층 수(n-cpu-moe), poll, CPU 마스크를 설정한다. 양자화는 Q4_K_XL, Q3_K_XL, IQ3_XXS, Q2_K_XL, IQ1_M 다섯 가지다. RAM이 두 모델 합계보다 작으면 자동 로드를 끄고 3.8만 올린다. llama.cpp 다운로드, 모델 두 개 다운로드, models.ini, run.bat 생성 순서로 진행 상황과 로그를 보여준다. 로직은 `../qwen38-installer/setup.ps1`과 같다.
+- 설치: 설치 경로, 양자화, 스레드 수, 컨텍스트, 전기요금 단가, 3.6 자동 로드 여부, 3.8 CPU 전문가 층 수(n-cpu-moe), poll, CPU 마스크, MTP 드래프트를 설정한다. MTP를 켜면 llama.cpp를 unsloth 포크 빌드로 바꿔 받고 MTP 사이드카(2.6GB)를 함께 받는다. 본가 llama.cpp엔 아직 MTP가 없다. 양자화는 Q4_K_XL, Q3_K_XL, IQ3_XXS, Q2_K_XL, IQ1_M 다섯 가지다. RAM이 두 모델 합계보다 작으면 자동 로드를 끄고 3.8만 올린다. llama.cpp 다운로드, 모델 두 개 다운로드, models.ini, run.bat 생성 순서로 진행 상황과 로그를 보여준다. 로직은 `../qwen38-installer/setup.ps1`과 같다.
 - 대시보드: GPU 사용률·VRAM·전력·온도, RAM, CPU, 디스크, SSD 속도, 마지막 벤치 tok/s를 1초마다 갱신한다. 전력은 시간당 전기요금으로 환산해 같이 표시한다. llama-server 시작·정지와 모델 로드 상태도 여기서 본다.
 - 벤치마크: 기본은 llama.cpp 동봉 llama-bench로 pp512(프롬프트 처리)·tg128(생성) tok/s를 3회 평균해 잰다. 커뮤니티·모델 카드와 같은 지표라 다른 PC와 비교할 수 있다. 실행 중인 서버는 먼저 내린다. 체감 모드는 내장 프롬프트 3종을 서버에 보내 프롬프트 처리 tok/s, 생성 tok/s, 소요 시간, 평균 전력, Wh, 원화 비용, 1000토큰당 비용을 낸다. 결과는 앱 폴더 `logs/bench-logs/<컴퓨터이름>-bench-<시각>.json`으로 저장한다. 튜닝 모드는 llama-bench 한 번으로 스레드 4/6/8/12/16, poll 0/50, CPU 마스크(없음, P코어만) 조합을 tg128만 재서 빠른 순으로 표를 만든다. 가장 빠른 조합을 버튼 하나로 설정에 적용한다. 결과 아래 판정 카드에 생성 20 tok/s 목표 대비 부족분, 병목(RAM 용량·RAM 대역폭·GPU), 양자화를 한 단계 낮췄을 때 예상 tok/s와 처방을 적는다.
 

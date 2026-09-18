@@ -39,6 +39,7 @@ Config = {
   ctx: number,               // 기본 65536
   kwhPrice: number,          // 원/kWh, 기본 150
   autoLoad36: boolean,       // 서버 시작 시 3.6도 로드. 기본 true. models.ini [qwen36] load-on-startup에 반영
+  mtp: boolean,              // MTP 드래프트. 기본 false. true면 llama.cpp를 unsloth 빌드로 받고 MTP 사이드카를 받아 [qwen38]에 model-draft/spec-type=draft-mtp/spec-draft-n-max=2 추가. bin/llmbench-build.json으로 빌드 종류 추적
   ncmoe38: number,           // 3.8 n-cpu-moe. 기본 99(전부 CPU). 0~99. models.ini와 llama-bench -ncmoe에 반영
   poll: number,              // llama-server --poll 0~100. 기본 50. models.ini [*] poll
   cpuMask: string            // llama-server --cpu-mask 16진수 문자열. ''이면 안 씀. 있으면 cpu-strict = true도 함께

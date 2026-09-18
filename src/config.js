@@ -40,6 +40,8 @@ function defaults(cores) {
     kwhPrice: 150,
     // 3.6을 서버 시작 시 같이 올릴지. RAM이 두 모델 합계보다 작으면 끄는 게 낫다.
     autoLoad36: true,
+    // MTP 드래프트(스펙큘레이티브 디코딩). 켜면 llama.cpp를 unsloth 빌드로 받고 MTP 사이드카(2.6GB)를 추가로 받는다.
+    mtp: false,
     // 3.8 전문가를 CPU에 두는 층 수. 99면 전부 CPU. 줄이면 뒷층 전문가가 VRAM으로 가서 조금 빨라진다.
     ncmoe38: 99,
     // llama-server --poll (0~100). 튜닝 벤치로 고른 값을 넣는다. 50이 llama.cpp 기본값.
@@ -79,6 +81,7 @@ function sanitize(base, partial) {
   if (Number.isFinite(partial.ctx) && partial.ctx >= 2048) c.ctx = Math.floor(partial.ctx);
   if (Number.isFinite(partial.kwhPrice) && partial.kwhPrice >= 0) c.kwhPrice = partial.kwhPrice;
   if (typeof partial.autoLoad36 === 'boolean') c.autoLoad36 = partial.autoLoad36;
+  if (typeof partial.mtp === 'boolean') c.mtp = partial.mtp;
   if (Number.isFinite(partial.ncmoe38) && partial.ncmoe38 >= 0 && partial.ncmoe38 <= 99) c.ncmoe38 = Math.floor(partial.ncmoe38);
   if (Number.isFinite(partial.poll) && partial.poll >= 0 && partial.poll <= 100) c.poll = Math.floor(partial.poll);
   if (typeof partial.cpuMask === 'string' && /^(0x[0-9a-fA-F]{1,16})?$/.test(partial.cpuMask)) c.cpuMask = partial.cpuMask;
