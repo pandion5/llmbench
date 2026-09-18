@@ -1,0 +1,20 @@
+{
+  "name": "llmbench",
+  "version": "0.2.0",
+  "description": "로컬 LLM(llama.cpp router) 점검, 설치, 모니터, 벤치마크 도구",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "release": "node scripts/release.js"
+  },
+  "build": {
+    "appId": "local.llmbench",
+    "win": {
+      "requestedExecutionLevel": "requireAdministrator"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  }
+}

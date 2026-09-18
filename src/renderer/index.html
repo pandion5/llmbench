@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>llmbench</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">llmbench</div>
+    <nav class="tabs" role="tablist" aria-label="화면 전환">
+      <button type="button" class="tab is-active" role="tab" id="tab-check" data-tab="check" aria-selected="true" aria-controls="panel-check">점검</button>
+      <button type="button" class="tab" role="tab" id="tab-install" data-tab="install" aria-selected="false" aria-controls="panel-install">설치</button>
+      <button type="button" class="tab" role="tab" id="tab-dashboard" data-tab="dashboard" aria-selected="false" aria-controls="panel-dashboard">대시보드</button>
+      <button type="button" class="tab" role="tab" id="tab-bench" data-tab="bench" aria-selected="false" aria-controls="panel-bench">벤치마크</button>
+      <button type="button" class="tab" role="tab" id="tab-harness" data-tab="harness" aria-selected="false" aria-controls="panel-harness">하네스</button>
+    </nav>
+    <div class="topbar-status">
+      <span id="version-badge" class="badge" title="현재 버전"></span>
+      <button type="button" class="btn btn-sm btn-primary" id="update-btn" hidden></button>
+      <span id="admin-badge" class="badge">권한 확인 중</span>
+      <span id="server-badge" class="badge st-stopped">서버 확인 중</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ① 점검 -->
+    <section class="panel is-active" id="panel-check" role="tabpanel" aria-labelledby="tab-check">
+      <div class="row">
+        <button type="button" class="btn btn-primary" id="check-run">점검 실행</button>
+        <span class="hint" id="check-hint">설치 전에 이 PC가 조건을 만족하는지 확인한다.</span>
+      </div>
+
+      <div id="check-banner" class="banner" hidden></div>
+
+      <table class="grid" id="check-table" hidden>
+        <caption class="sr-only">점검 항목</caption>
+        <thead>
+          <tr><th scope="col">항목</th><th scope="col">현재값</th><th scope="col">필요값</th><th scope="col">상태</th></tr>
+        </thead>
+        <tbody id="check-rows"></tbody>
+      </table>
+
+      <div id="hw-card" class="card" hidden>
+        <h2>하드웨어 요약</h2>
+        <dl class="kv" id="hw-kv"></dl>
+        <table class="grid grid-sm">
+          <caption class="sr-only">드라이브 목록</caption>
+          <thead>
+            <tr><th scope="col">드라이브</th><th scope="col">여유</th><th scope="col">전체</th><th scope="col">매체</th><th scope="col">설치 위치</th></tr>
+          </thead>
+          <tbody id="hw-drives"></tbody>
+        </table>
+        <p class="hint" id="hw-ssd"></p>
+      </div>
+
+      <p class="hint spec-path" id="check-spec" hidden>
+        <span id="check-spec-text"></span>
+        <button type="button" class="btn btn-sm" id="check-spec-open">열기</button>
+      </p>
+    </section>
+
+    <!-- ② 설치 -->
+    <section class="panel" id="panel-install" role="tabpanel" aria-labelledby="tab-install" hidden>
+      <div class="card">
+        <h2>설정</h2>
+        <form class="form" id="config-form">
+          <label for="cfg-installDir">설치 경로</label>
+          <input type="text" id="cfg-installDir" name="installDir" spellcheck="false">
+
+          <label for="cfg-quant">양자화</label>
+          <select id="cfg-quant" name="quant">
+            <option value="UD-Q4_K_XL">UD-Q4_K_XL (104GB, 품질 기준)</option>
+            <option value="UD-Q3_K_XL">UD-Q3_K_XL (90GB)</option>
+            <option value="UD-IQ3_XXS">UD-IQ3_XXS (82GB)</option>
+            <option value="UD-Q2_K_XL">UD-Q2_K_XL (79GB, 속도 실험용)</option>
+            <option value="UD-IQ1_M">UD-IQ1_M (75GB, 품질 크게 떨어짐)</option>
+          </select>
+          <span class="hint">양자화를 바꾸면 3.8 모델을 새로 받는다. 이전 양자화 파일은 models\qwen38 아래 폴더로 남으니 필요 없으면 직접 지운다.</span>
+
+          <label for="cfg-ncmoe38">3.8 CPU 전문가 층 수</label>
+          <input type="number" id="cfg-ncmoe38" name="ncmoe38" min="0" max="99" step="1">
+          <span class="hint">앞에서부터 이 층 수만큼 전문가를 CPU RAM에 둔다. Qwen3.8은 48층이라 48 이상이면 전부 CPU. 47, 46처럼 낮추면 뒷층 전문가가 VRAM으로 올라가는데 한 층에 1~1.4GB라 3080 10GB에선 1~2층이 한계다. 층당 이득은 2% 안팎이다. VRAM이 넘치면 서버가 뜨지 않는다. 바꾼 뒤 설치를 다시 실행해야 반영된다.</span>
+
+          <label for="cfg-poll">poll</label>
+          <input type="number" id="cfg-poll" name="poll" min="0" max="100" step="1">
+          <span class="hint">스레드가 일감을 기다릴 때 바쁘게 도는 비율. 기본 50. 벤치마크 탭의 튜닝 모드가 좋은 값을 찾아 준다.</span>
+
+          <label for="cfg-cpuMask">CPU 마스크</label>
+          <input type="text" id="cfg-cpuMask" name="cpuMask" spellcheck="false" placeholder="비우면 안 씀. 예: 0xFFFF">
+          <span class="hint">llama-server --cpu-mask. 하이브리드 CPU에서 P코어만 쓰게 할 때 넣는다. 튜닝 모드 결과를 적용하면 자동으로 채워진다.</span>
+
+          <label for="cfg-autoLoad36">3.6 자동 로드</label>
+          <span><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36"> 서버 시작 시 Qwen3.6도 같이 올린다. RAM이 두 모델 합계(Q4 기준 125GB)보다 작으면 끈다. 바꾼 뒤 설치를 다시 실행해야 models.ini에 반영된다.</span>
+
+          <label for="cfg-threads">스레드</label>
+          <input type="number" id="cfg-threads" name="threads" min="1" max="256" step="1">
+
+          <label for="cfg-ctx">컨텍스트 길이</label>
+          <input type="number" id="cfg-ctx" name="ctx" min="2048" max="1048576" step="1024">
+
+          <label for="cfg-kwhPrice">전기요금 (원/kWh)</label>
+          <input type="number" id="cfg-kwhPrice" name="kwhPrice" min="0" step="1">
+
+          <div class="form-actions">
+            <button type="submit" class="btn">설정 저장</button>
+            <span class="hint" id="config-msg" aria-live="polite"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="row">
+        <button type="button" class="btn btn-primary" id="install-start">설치 시작</button>
+        <button type="button" class="btn" id="install-cancel" disabled>취소</button>
+        <span class="hint" id="install-msg" aria-live="polite"></span>
+      </div>
+
+      <!-- 주의 항목이 있을 때 쓰는 인라인 확인. 브라우저 다이얼로그는 쓰지 않는다. -->
+      <div class="banner banner-warn" id="install-confirm" hidden role="group" aria-labelledby="install-confirm-text">
+        <span id="install-confirm-text">주의 항목이 있다. 그래도 설치할까?</span>
+        <button type="button" class="btn btn-primary" id="install-confirm-yes">그래도 설치</button>
+        <button type="button" class="btn" id="install-confirm-no">그만두기</button>
+      </div>
+
+      <ul class="steps" id="install-steps"></ul>
+
+      <div class="card">
+        <h2>로그</h2>
+        <pre class="log" id="install-log" tabindex="0" aria-label="설치 로그"></pre>
+      </div>
+    </section>
+
+    <!-- ③ 대시보드 -->
+    <section class="panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" hidden>
+      <div class="row">
+        <button type="button" class="btn btn-primary" id="server-start">서버 시작</button>
+        <button type="button" class="btn" id="server-stop">서버 정지</button>
+        <span class="hint" id="server-msg" aria-live="polite"></span>
+      </div>
+
+      <div class="metrics" id="metrics">
+        <div class="metric"><span class="metric-label">GPU 사용률</span><strong class="metric-value" id="m-gpu-util">-</strong><span class="metric-sub" id="m-gpu-name">GPU 정보 없음</span></div>
+        <div class="metric"><span class="metric-label">VRAM</span><strong class="metric-value" id="m-vram">-</strong><span class="metric-sub" id="m-vram-sub"></span></div>
+        <div class="metric"><span class="metric-label">GPU 전력</span><strong class="metric-value" id="m-power">-</strong><span class="metric-sub" id="m-power-krw"></span></div>
+        <div class="metric"><span class="metric-label">GPU 온도</span><strong class="metric-value" id="m-temp">-</strong><span class="metric-sub">nvidia-smi 기준</span></div>
+        <div class="metric"><span class="metric-label">RAM</span><strong class="metric-value" id="m-ram">-</strong><span class="metric-sub" id="m-ram-sub"></span></div>
+        <div class="metric"><span class="metric-label">CPU</span><strong class="metric-value" id="m-cpu">-</strong><span class="metric-sub">전체 사용률</span></div>
+        <div class="metric"><span class="metric-label">디스크 여유</span><strong class="metric-value" id="m-disk">-</strong><span class="metric-sub" id="m-disk-sub"></span></div>
+        <div class="metric"><span class="metric-label">SSD 속도</span><strong class="metric-value" id="m-ssd">-</strong><span class="metric-sub" id="m-ssd-sub"></span></div>
+      </div>
+
+      <div class="metrics">
+        <div class="metric metric-wide">
+          <span class="metric-label">마지막 벤치 생성 속도</span>
+          <strong class="metric-value" id="m-bench">-</strong>
+          <span class="metric-sub" id="m-bench-sub"></span>
+        </div>
+      </div>
+
+      <div class="charts">
+        <div class="card">
+          <h2>GPU 전력 (최근 60초)</h2>
+          <canvas id="chart-power" width="600" height="120" role="img" aria-label="최근 60초 GPU 전력 그래프"></canvas>
+        </div>
+        <div class="card">
+          <h2>GPU 사용률 (최근 60초)</h2>
+          <canvas id="chart-util" width="600" height="120" role="img" aria-label="최근 60초 GPU 사용률 그래프"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>모델</h2>
+        <ul class="models" id="model-list"></ul>
+      </div>
+    </section>
+
+    <!-- ④ 벤치마크 -->
+    <section class="panel" id="panel-bench" role="tabpanel" aria-labelledby="tab-bench" hidden>
+      <div class="row" role="radiogroup" aria-label="벤치 종류">
+        <label><input type="radio" name="bench-mode" value="standard" checked> 표준 (llama-bench pp512 / tg128, 다른 PC와 비교용)</label>
+        <label><input type="radio" name="bench-mode" value="prompts"> 체감 (서버에 프롬프트 3종)</label>
+        <label><input type="radio" name="bench-mode" value="tuning"> 튜닝 (스레드 × poll × CPU 마스크 조합, tg128만)</label>
+      </div>
+      <p class="hint">표준 벤치는 모델을 직접 올리므로 실행 중인 llama-server를 먼저 내린다. 3.8 기준 로드 포함 몇 분 걸린다.</p>
+      <div class="row">
+        <label for="bench-model">모델</label>
+        <select id="bench-model"></select>
+        <button type="button" class="btn btn-primary" id="bench-start">벤치 시작</button>
+        <button type="button" class="btn" id="bench-cancel" disabled>취소</button>
+      </div>
+      <p class="hint" id="bench-msg" aria-live="polite"></p>
+
+      <div class="card" id="bench-live" hidden>
+        <h2>진행 상황</h2>
+        <p class="hint" id="bench-progress-text">대기 중</p>
+        <pre class="log log-stream" id="bench-stream" aria-live="off"></pre>
+      </div>
+
+      <div class="card" id="bench-summary-card" hidden>
+        <h2>요약</h2>
+        <div class="metrics" id="bench-summary"></div>
+        <div class="row">
+          <button type="button" class="btn" id="bench-export">결과 저장 (JSON)</button>
+          <span class="hint" id="bench-export-path"></span>
+          <button type="button" class="btn" id="bench-open" hidden>파일 위치 열기</button>
+        </div>
+      </div>
+
+      <div class="card" id="bench-verdict-card" hidden>
+        <h2>판정 (목표 생성 20 tok/s)</h2>
+        <p class="verdict-head">
+          <strong class="verdict-value" id="verdict-speed">-</strong>
+          <span class="status-tag" id="verdict-badge"></span>
+        </p>
+        <p id="verdict-bottleneck"></p>
+        <p id="verdict-quant"></p>
+        <ul class="verdict-actions" id="verdict-actions"></ul>
+      </div>
+
+      <div class="card" id="bench-tuning-card" hidden>
+        <h2>튜닝 결과 (생성 tok/s 높은 순)</h2>
+        <p class="hint" id="tuning-note"></p>
+        <table class="grid">
+          <caption class="sr-only">조합별 결과</caption>
+          <thead>
+            <tr><th scope="col">스레드</th><th scope="col">poll</th><th scope="col">CPU 마스크</th><th scope="col">tg128 tok/s</th><th scope="col">±</th></tr>
+          </thead>
+          <tbody id="tuning-rows"></tbody>
+        </table>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="tuning-apply">가장 빠른 조합을 설정에 적용</button>
+          <span class="hint" id="tuning-apply-msg" aria-live="polite"></span>
+        </div>
+        <p class="hint">적용 뒤 설치 탭에서 설치를 다시 실행하면 models.ini에 반영된다. 다운로드는 건너뛴다.</p>
+      </div>
+
+      <table class="grid" id="bench-table" hidden>
+        <caption class="sr-only">프롬프트별 결과</caption>
+        <thead>
+          <tr>
+            <th scope="col">프롬프트</th>
+            <th scope="col">prompt tok/s</th>
+            <th scope="col">gen tok/s</th>
+            <th scope="col">초</th>
+            <th scope="col">평균 W</th>
+            <th scope="col">Wh</th>
+            <th scope="col">측정 출처</th>
+          </tr>
+        </thead>
+        <tbody id="bench-rows"></tbody>
+      </table>
+    </section>
+    <!-- ⑤ 하네스: 코딩 에이전트 CLI를 외부 터미널로 띄운다 -->
+    <section class="panel" id="panel-harness" role="tabpanel" aria-labelledby="tab-harness" hidden>
+      <p class="hint">코딩 에이전트 CLI를 새 터미널 창으로 연다. llama-server가 준비돼 있어야 한다.</p>
+
+      <table class="grid" id="harness-table">
+        <caption class="sr-only">하네스 목록</caption>
+        <thead>
+          <tr><th scope="col">이름</th><th scope="col">설명</th><th scope="col">설치 상태</th><th scope="col">실행</th></tr>
+        </thead>
+        <tbody id="harness-rows"></tbody>
+      </table>
+
+      <div class="row">
+        <label for="harness-workdir">작업 폴더</label>
+        <input type="text" id="harness-workdir" placeholder="비우면 설치 폴더의 workspace">
+        <label for="harness-model">모델</label>
+        <select id="harness-model">
+          <option value="qwen38">qwen38</option>
+          <option value="qwen36">qwen36</option>
+        </select>
+      </div>
+      <p class="hint" id="harness-msg" aria-live="polite"></p>
+
+      <div class="card">
+        <h2>설치 로그</h2>
+        <pre class="log" id="harness-log" tabindex="0" aria-label="하네스 설치 로그"></pre>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // window.api(preload)가 없으면 개발 검증용 목 API를 대신 로드한다.
+    (function () {
+      if (window.api) {
+        window.startApp();
+        return;
+      }
+      var s = document.createElement('script');
+      s.src = 'mock-api.js';
+      s.onload = function () { window.startApp(); };
+      document.head.appendChild(s);
+    })();
+  </script>
+</body>
+</html>
