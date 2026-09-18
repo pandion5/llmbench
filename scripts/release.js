@@ -2,7 +2,7 @@
 // 릴리스 묶음 생성. 사용: node scripts/release.js <버전> [--notes "내용"] [--publish]
 //  - package.json version 갱신
 //  - dist/llmbench-update-<버전>.zip (src, package.json, README.md, CONTRACT.md, start.bat)
-//  - dist/llmbench-portable-<버전>.zip (위 + node_modules, build. 처음 설치용)
+//  - dist/llmbench-portable-<버전>.zip (@electron/packager로 만든 llmbench.exe 폴더. 처음 설치용)
 //  - dist/update.json (version, zipUrl, sha256, notes, date)
 //  - --publish: gh release create v<버전> 로 GitHub Release에 올린다. 저장소는 REPO.
 
@@ -55,10 +55,19 @@ sh(TAR, ['-a', '-cf', updateZip, 'src', 'package.json', 'README.md', 'CONTRACT.m
 const sum = sha256(updateZip);
 console.log(`${path.basename(updateZip)} ${(fs.statSync(updateZip).size / 1024).toFixed(0)}KB sha256 ${sum}`);
 
-// 처음 설치용 포터블 zip
+// 처음 설치용. @electron/packager로 llmbench.exe 폴더를 만든다. asar를 끄면 앱 파일이
+// resources/app 아래 그대로 놓여 업데이트 배치가 src를 덮어쓸 수 있다.
+const packOut = path.join(DIST, 'pack');
+sh('cmd', ['/c', 'npx', '@electron/packager', '.', 'llmbench',
+  '--platform=win32', '--arch=x64', `--out=${packOut}`, '--asar=false', '--overwrite',
+  '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/node_modules', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
+  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs',
+  '--win32metadata.requested-execution-level=requireAdministrator',
+  '--win32metadata.ProductName=llmbench', '--win32metadata.FileDescription=llmbench']);
 const portableZip = path.join(DIST, `llmbench-portable-${version}.zip`);
-sh(TAR, ['-a', '-cf', portableZip, 'src', 'package.json', 'package-lock.json', 'README.md', 'CONTRACT.md', 'start.bat', 'llmbench.vbs', 'build', 'node_modules']);
-console.log(`${path.basename(portableZip)} ${(fs.statSync(portableZip).size / 1048576).toFixed(0)}MB`);
+sh(TAR, ['-a', '-cf', portableZip, '-C', packOut, 'llmbench-win32-x64']);
+fs.rmSync(packOut, { recursive: true, force: true });
+console.log(`${path.basename(portableZip)} ${(fs.statSync(portableZip).size / 1048576).toFixed(0)}MB (llmbench-win32-x64/llmbench.exe)`);
 
 const manifest = {
   version,

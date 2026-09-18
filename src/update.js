@@ -126,13 +126,15 @@ function run(file, args, opts = {}) {
 
 // 교체 배치. 앱이 끝날 때까지 기다린 뒤 staging 내용을 앱 폴더에 덮어쓰고 start.bat을 다시 띄운다.
 // 경로는 배치 안에 문자열로 들어가므로 set으로 변수에 넣고 따옴표로 감싼다.
-function applyScript(appDir, staging, pid) {
+// exe가 있으면(패키징 배포) 그걸로 다시 띄우고, 없으면(포터블 zip) vbs 또는 start.bat.
+function applyScript(appDir, staging, pid, exe) {
   return [
     '@echo off',
     'chcp 65001 >nul',
     `set "APP=${appDir}"`,
     `set "STG=${staging}"`,
     `set "PID=${pid}"`,
+    `set "EXE=${exe || ''}"`,
     ':wait',
     'tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul',
     'if not errorlevel 1 (',
@@ -149,7 +151,7 @@ function applyScript(appDir, staging, pid) {
     'if exist "%STG%\\llmbench.vbs" copy /Y "%STG%\\llmbench.vbs" "%APP%\\llmbench.vbs" >nul',
     'rmdir /S /Q "%STG%" >nul 2>nul',
     // 콘솔 창 없이 다시 띄운다. vbs가 없으면 start.bat.
-    'if exist "%APP%\\llmbench.vbs" (wscript "%APP%\\llmbench.vbs") else (start "" "%APP%\\start.bat")',
+    'if not "%EXE%"=="" (start "" "%EXE%") else if exist "%APP%\\llmbench.vbs" (wscript "%APP%\\llmbench.vbs") else (start "" "%APP%\\start.bat")',
     'exit /b 0',
     ':fail',
     'echo 업데이트 파일 복사에 실패했다. %STG% 내용을 %APP%에 직접 복사한다.',
@@ -187,7 +189,7 @@ async function apply() {
 
     const appDir = app.getAppPath();
     const script = path.join(work, 'apply-update.cmd');
-    await fsp.writeFile(script, applyScript(appDir, staging, process.pid), 'utf8');
+    await fsp.writeFile(script, applyScript(appDir, staging, process.pid, app.isPackaged ? process.execPath : ''), 'utf8');
 
     emit({ stage: 'restart', percent: 100, text: '앱을 다시 시작한다' });
     // Electron 자식은 Job 객체에 묶여 앱이 끝나면 같이 죽는다. powershell의 Start-Process로 띄우면

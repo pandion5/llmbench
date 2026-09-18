@@ -9,7 +9,7 @@ npm install
 npm start
 ```
 
-포터블 폴더에서는 `llmbench.vbs`를 더블클릭한다. 콘솔 창 없이 뜬다. `start.bat`도 같은 일을 하지만 콘솔 창이 잠깐 보인다.
+배포본(Release의 포터블 zip)은 `llmbench-win32-x64\llmbench.exe`를 실행한다. 관리자 권한 매니페스트가 들어 있어 UAC를 거쳐 뜬다. 앱 파일은 `resources\app` 아래 있고 업데이트는 그 폴더만 바꾼다. 소스 폴더에서 바로 띄울 땐 `llmbench.vbs`(콘솔 없음) 또는 `start.bat`.
 
 관리자 권한이 아니면 UAC 창을 띄워 자기 자신을 다시 실행한다. 개발 중 승격을 건너뛰려면 `LLMBENCH_NO_ELEVATE=1`을 준다.
 
@@ -32,7 +32,7 @@ npm start
 node scripts/release.js 0.2.1 --notes "바뀐 내용" --publish
 ```
 
-`--publish`를 빼면 dist만 만든다. 처음 설치하는 PC에는 포터블 zip을 준다.
+`--publish`를 빼면 dist만 만든다. 포터블 zip은 `@electron/packager`로 만든 `llmbench.exe` 폴더다. 처음 설치하는 PC에는 이 zip을 준다.
 
 ## 구조
 
