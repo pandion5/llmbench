@@ -568,6 +568,10 @@
         return Promise.resolve({ path: 'C:\\Users\\me\\AppData\\Roaming\\llmbench\\bench-' + lastResult.ts + '.json' });
       }
     },
+    diag: {
+      copy: function () { return Promise.resolve({ chars: 4210 }); },
+      share: function () { return Promise.resolve({ url: 'https://paste.rs/mock', chars: 4210 }); }
+    },
     shell: {
       openPath: function (p) { console.log('[mock] openPath', p); return Promise.resolve(); }
     },

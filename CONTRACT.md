@@ -168,7 +168,12 @@ launch 동작:
 - llama-server가 ready가 아니면 ok=false, error에 안내.
 
 ### 기타
-- `api.shell.openPath(path)` → void
+### 진단 (diag)
+설정, 하드웨어, models.ini, bin 구성, 모델 파일 목록, 서버 상태와 로그를 한 텍스트로 묶는다.
+- `api.diag.copy()` → `{ chars: number }`  클립보드에 넣는다.
+- `api.diag.share()` → `{ url: string, chars: number }`  paste.rs에 올리고 주소를 돌려준다. 공개로 올라가므로 화면에서 확인을 받은 뒤에만 부른다.
+
+- `api.shell.openPath(p)`
 - `api.app.version()` → string  package.json version
 - `api.update.check()` → `{ current, latest: string|null, available: boolean, notes, zipUrl, sha256, error: string|null }`  원격 update.json(GitHub Release latest)과 비교. 네트워크 실패면 available false + error.
 - `api.update.apply()` → `{ ok, error }`  zip 다운로드 → sha256 검증 → userData/update/staging에 해제 → 교체 배치 실행 → 앱 종료. 배치가 src·package.json·문서를 덮어쓰고 start.bat 재실행.

@@ -572,6 +572,24 @@
     ctx.fillText('최대 ' + num(max, 0), 4, 12);
   }
 
+  $('#diag-copy').addEventListener('click', function () {
+    window.api.diag.copy().then(function (r) {
+      setText('#server-log-msg', '진단 정보 ' + r.chars + '자를 클립보드에 복사했다. 붙여넣기로 전달한다.');
+    }).catch(function (err) {
+      setText('#server-log-msg', '복사 실패: ' + (err && err.message ? err.message : String(err)));
+    });
+  });
+
+  $('#diag-share').addEventListener('click', function () {
+    if (!confirm('진단 정보를 paste.rs에 공개로 올린다. 주소를 아는 사람은 누구나 볼 수 있다. 진행한다?')) return;
+    setText('#server-log-msg', '올리는 중');
+    window.api.diag.share().then(function (r) {
+      setText('#server-log-msg', '올렸다: ' + r.url + ' (주소를 클립보드에 복사했다)');
+    }).catch(function (err) {
+      setText('#server-log-msg', '올리지 못했다: ' + (err && err.message ? err.message : String(err)));
+    });
+  });
+
   $('#server-log-refresh').addEventListener('click', function () {
     refreshServerLog().then(function () {
       setText('#server-log-msg', '');

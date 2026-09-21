@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard } = require('electron');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
@@ -114,6 +114,75 @@ function saveSpecLog(report, cfg) {
   return withLogsDir('spec-logs', (dir) => writeSpecLog(dir, report, cfg));
 }
 
+// 진단 묶음. 설정, 하드웨어, models.ini, bin 구성, 모델 파일 목록, 서버 로그를 한 텍스트로 만든다.
+// 문제가 생겼을 때 이 한 덩이만 넘기면 상태를 알 수 있게 하는 것이 목적이다.
+const PASTE_URL = 'https://paste.rs';
+
+async function readOr(file, fallback) {
+  try {
+    return await fsp.readFile(file, 'utf8');
+  } catch (e) {
+    return `${fallback}: ${e.message}`;
+  }
+}
+
+async function listModelFiles(installDir) {
+  const root = path.join(installDir, 'models');
+  const out = [];
+  const walk = async (dir, depth) => {
+    if (depth > 3) return;
+    const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full, depth + 1);
+      } else {
+        const st = await fsp.stat(full).catch(() => null);
+        const gb = st ? (st.size / 1024 ** 3).toFixed(2) : '?';
+        out.push(`${path.relative(root, full)}  ${gb}GB`);
+      }
+    }
+  };
+  await walk(root, 0);
+  return out.length ? out : ['모델 폴더가 비어 있거나 없음'];
+}
+
+async function buildDiag() {
+  const cfg = await config.get();
+  const lines = [
+    `llmbench ${app.getVersion()}  ${os.hostname()}  ${new Date().toISOString()}`,
+    '',
+    '[설정]',
+    JSON.stringify(cfg, null, 2),
+    '',
+    '[하드웨어]'
+  ];
+  try {
+    lines.push(JSON.stringify(await sys.getHwInfo(cfg.installDir), null, 2));
+  } catch (e) {
+    lines.push(`조회 실패: ${e.message}`);
+  }
+
+  lines.push('', '[models.ini]', await readOr(path.join(cfg.installDir, 'models.ini'), '읽지 못함'));
+
+  lines.push('', '[bin]');
+  const bin = path.join(cfg.installDir, 'bin');
+  lines.push(await readOr(path.join(bin, 'llmbench-build.json'), '빌드 정보 없음'));
+  const names = await fsp.readdir(bin).catch(() => []);
+  lines.push(
+    `파일 ${names.length}개` +
+      `, llama-server.exe ${names.includes('llama-server.exe') ? '있음' : '없음'}` +
+      `, llama-bench.exe ${names.includes('llama-bench.exe') ? '있음' : '없음'}` +
+      `, cudart64_12.dll ${names.includes('cudart64_12.dll') ? '있음' : '없음'}` +
+      `, ggml-cuda.dll ${names.includes('ggml-cuda.dll') ? '있음' : '없음'}`
+  );
+
+  lines.push('', '[모델 파일]', ...(await listModelFiles(cfg.installDir)));
+  lines.push('', '[서버 상태]', JSON.stringify(server.status(), null, 2));
+  lines.push('', '[서버 로그]', ...server.logs());
+  return lines.join('\r\n');
+}
+
 function registerIpc() {
   ipcMain.handle('check:run', async () => {
     const cfg = await config.get();
@@ -184,6 +253,21 @@ function registerIpc() {
       return { path: file };
     })
   );
+
+  ipcMain.handle('diag:copy', async () => {
+    const text = await buildDiag();
+    clipboard.writeText(text);
+    return { chars: text.length };
+  });
+  // 인터넷에 공개로 올라간다. 화면에서 확인을 받은 뒤에만 부른다.
+  ipcMain.handle('diag:share', async () => {
+    const text = await buildDiag();
+    const res = await fetch(PASTE_URL, { method: 'POST', body: text });
+    if (!res.ok) throw new Error(`업로드 실패 HTTP ${res.status}`);
+    const url = (await res.text()).trim();
+    clipboard.writeText(url);
+    return { url, chars: text.length };
+  });
 
   ipcMain.handle('monitor:snapshot', async () => sys.getSnapshot((await config.get()).installDir));
 

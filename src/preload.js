@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('api', {
     cancel: () => call('bench:cancel'),
     export: () => call('bench:export')
   },
+  diag: {
+    copy: () => call('diag:copy'),
+    share: () => call('diag:share')
+  },
   shell: {
     openPath: (p) => call('shell:openPath', p)
   },
