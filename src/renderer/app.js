@@ -284,6 +284,8 @@
     $('#cfg-kwhPrice').value = cfg.kwhPrice;
     $('#cfg-autoLoad36').checked = cfg.autoLoad36 !== false;
     $('#cfg-mtp').checked = cfg.mtp === true;
+    $('#cfg-mtpFile').value = cfg.mtpFile;
+    $('#cfg-loadMode').value = cfg.loadMode;
     $('#cfg-ncmoe38').value = cfg.ncmoe38;
     $('#cfg-poll').value = cfg.poll;
     $('#cfg-cpuMask').value = cfg.cpuMask || '';
@@ -320,6 +322,8 @@
       kwhPrice: Number($('#cfg-kwhPrice').value),
       autoLoad36: $('#cfg-autoLoad36').checked,
       mtp: $('#cfg-mtp').checked,
+      mtpFile: $('#cfg-mtpFile').value,
+      loadMode: $('#cfg-loadMode').value,
       ncmoe38: Number($('#cfg-ncmoe38').value),
       poll: Number($('#cfg-poll').value),
       cpuMask: $('#cfg-cpuMask').value.trim()

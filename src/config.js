@@ -42,6 +42,10 @@ function defaults(cores) {
     autoLoad36: true,
     // MTP 드래프트(스펙큘레이티브 디코딩). 켜면 llama.cpp를 unsloth 빌드로 받고 MTP 사이드카(2.6GB)를 추가로 받는다.
     mtp: false,
+    mtpFile: MTP_FILES[0],
+    // mmap은 파일을 걸어 두고 필요할 때 읽는다. none은 전부 RAM으로 읽어 둔다.
+    // 모델이 RAM에 들어가면 none이 더 빠를 수 있다.
+    loadMode: 'mmap',
     // 3.8 전문가를 CPU에 두는 층 수. 99면 전부 CPU. 줄이면 뒷층 전문가가 VRAM으로 가서 조금 빨라진다.
     ncmoe38: 99,
     // llama-server --poll (0~100). 튜닝 벤치로 고른 값을 넣는다. 50이 llama.cpp 기본값.
@@ -52,6 +56,18 @@ function defaults(cores) {
 }
 
 // 아래로 갈수록 작고 빠르지만 품질이 떨어진다. Q2_K_XL·IQ1_M은 속도 실험용이다.
+// MTP 드래프트 헤드 파일. shared는 타깃 모델의 임베딩을 빌려 쓰는데 양자화가 다르면
+// 텐서 형상이 안 맞아 서버가 죽는다. IQ3에서는 자체 임베딩을 가진 쪽을 쓴다.
+const MTP_FILES = [
+  'mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf',
+  'mtp-Qwen3.8-Flash-Next-Q8_0.gguf',
+  'mtp-Qwen3.8-Flash-Next-BF16.gguf',
+  'mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf',
+  'mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf',
+  'mtp-Qwen3.8-Flash-Next-shared-BF16.gguf'
+];
+const LOAD_MODES = ['mmap', 'none'];
+
 const QUANTS = ['UD-Q4_K_XL', 'UD-Q3_K_XL', 'UD-IQ3_XXS', 'UD-Q2_K_XL', 'UD-IQ1_M'];
 
 // 설치 경로는 배치 파일과 powershell 명령에 들어가므로 명령으로 해석될 수 있는 문자를 막는다.
@@ -82,6 +98,8 @@ function sanitize(base, partial) {
   if (Number.isFinite(partial.kwhPrice) && partial.kwhPrice >= 0) c.kwhPrice = partial.kwhPrice;
   if (typeof partial.autoLoad36 === 'boolean') c.autoLoad36 = partial.autoLoad36;
   if (typeof partial.mtp === 'boolean') c.mtp = partial.mtp;
+  if (MTP_FILES.includes(partial.mtpFile)) c.mtpFile = partial.mtpFile;
+  if (LOAD_MODES.includes(partial.loadMode)) c.loadMode = partial.loadMode;
   if (Number.isFinite(partial.ncmoe38) && partial.ncmoe38 >= 0 && partial.ncmoe38 <= 99) c.ncmoe38 = Math.floor(partial.ncmoe38);
   if (Number.isFinite(partial.poll) && partial.poll >= 0 && partial.poll <= 100) c.poll = Math.floor(partial.poll);
   if (typeof partial.cpuMask === 'string' && /^(0x[0-9a-fA-F]{1,16})?$/.test(partial.cpuMask)) c.cpuMask = partial.cpuMask;
@@ -115,4 +133,4 @@ async function set(partial) {
   return cache;
 }
 
-module.exports = { get, set, configPath, userDataDir, defaultThreads, installDirError, FORBIDDEN_PATH_CHARS, QUANTS };
+module.exports = { get, set, configPath, userDataDir, defaultThreads, installDirError, FORBIDDEN_PATH_CHARS, QUANTS, MTP_FILES, LOAD_MODES };

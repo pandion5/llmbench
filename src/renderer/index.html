@@ -94,6 +94,24 @@
           <label for="cfg-mtp">MTP 드래프트</label>
           <span><input type="checkbox" id="cfg-mtp" name="mtp"> 3.8의 내장 MTP 헤드로 초안을 뽑아 생성을 빠르게 한다. 켜면 llama.cpp를 unsloth 빌드로 바꿔 받고(약 340MB) MTP 파일(2.6GB)을 추가로 받는다. VRAM을 2.6GB 더 쓴다. 효과는 체감 벤치로 잰다(llama-bench는 드래프트 미지원).</span>
 
+          <label for="cfg-mtpFile">MTP 파일</label>
+          <select id="cfg-mtpFile" name="mtpFile">
+            <option value="mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf">Q4_K_M (2.8GB, 자체 임베딩)</option>
+            <option value="mtp-Qwen3.8-Flash-Next-Q8_0.gguf">Q8_0 (4.1GB, 자체 임베딩)</option>
+            <option value="mtp-Qwen3.8-Flash-Next-BF16.gguf">BF16 (7.8GB, 자체 임베딩)</option>
+            <option value="mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf">shared-Q4_K_M (1.9GB)</option>
+            <option value="mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf">shared-Q8_0 (2.8GB)</option>
+            <option value="mtp-Qwen3.8-Flash-Next-shared-BF16.gguf">shared-BF16 (5.2GB)</option>
+          </select>
+          <span class="hint">shared는 본체 모델의 임베딩을 빌려 쓴다. 본체 양자화가 IQ3처럼 다르면 텐서 형상이 안 맞아 서버가 죽는다. 그 경우 자체 임베딩을 가진 쪽을 쓴다.</span>
+
+          <label for="cfg-loadMode">모델 적재 방식</label>
+          <select id="cfg-loadMode" name="loadMode">
+            <option value="mmap">mmap (파일을 걸어 두고 필요할 때 읽는다)</option>
+            <option value="none">none (전부 RAM으로 읽어 둔다)</option>
+          </select>
+          <span class="hint">전문가를 CPU에 두면 llama.cpp가 none을 권한다. 모델이 RAM에 들어갈 때만 none이 낫다. 모자라면 시작이 느려지거나 실패한다.</span>
+
           <label for="cfg-autoLoad36">3.6 자동 로드</label>
           <span><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36"> 서버 시작 시 Qwen3.6도 같이 올린다. RAM이 두 모델 합계(Q4 기준 125GB)보다 작으면 끈다. 바꾼 뒤 설치를 다시 실행해야 models.ini에 반영된다.</span>
 

@@ -47,6 +47,8 @@
     kwhPrice: 150,
     autoLoad36: true,
     mtp: false,
+    mtpFile: 'mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf',
+    loadMode: 'mmap',
     ncmoe38: 99,
     poll: 50,
     cpuMask: ''

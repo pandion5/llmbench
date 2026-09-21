@@ -21,7 +21,8 @@ const CUDA_MIN_DRIVER = { 13: 580, 12: 525 };
 // MTP는 본가에 아직 안 들어갔다(PR ggml-org#28243 미병합). unsloth 포크 프리빌드를 쓴다.
 // 자산 이름: app-<tag>-windows-x64-cuda12-portable.zip. portable은 전 GPU 세대 커널 포함.
 const UNSLOTH_ASSET_RE = /^app-.*-windows-x64-cuda(\d+)-portable\.zip$/;
-const MTP_FILE = 'MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf';
+// MTP 헤드는 저장소 MTP/ 폴더에 있다. 어떤 파일을 쓸지는 설정에서 고른다.
+const MTP_DIR = 'MTP';
 // bin 폴더가 어느 빌드인지 남긴다. MTP 설정을 바꾸면 빌드를 갈아야 하므로 이 파일로 판단한다.
 const BUILD_INFO = 'llmbench-build.json';
 // 다운로드가 진전 없이 연속 실패할 수 있는 횟수
@@ -612,8 +613,7 @@ async function hfDownload(stepId, repo, folder, fileName, localDir) {
 
 // 0.3.0과 0.3.1은 MTP 파일을 qwen38/MTP/MTP 아래에 받았다. 그 파일이 있으면 제자리로 옮긴다.
 // 받다 만 파일도 같이 옮겨 이어받기를 살린다.
-async function moveStrayMtp(models) {
-  const name = path.basename(MTP_FILE);
+async function moveStrayMtp(models, name) {
   const strayDir = path.join(models, 'qwen38', 'MTP', 'MTP');
   const destDir = path.join(models, 'qwen38', 'MTP');
   if (!fs.existsSync(path.join(strayDir, name))) return;
@@ -632,8 +632,8 @@ async function stepModels(cfg) {
   if (cfg.mtp) {
     // MTP 헤드는 저장소 MTP/ 폴더에 따로 있다. 양자화와 무관하게 하나만 쓴다.
     // 받는 경로에 저장소 폴더명이 그대로 붙으므로 qwen38까지만 넘긴다.
-    await moveStrayMtp(models);
-    await hfDownload('model38', REPO_38, 'MTP', path.basename(MTP_FILE), path.join(models, 'qwen38'));
+    await moveStrayMtp(models, cfg.mtpFile);
+    await hfDownload('model38', REPO_38, MTP_DIR, cfg.mtpFile, path.join(models, 'qwen38'));
   }
   await hfDownload('model36', REPO_36, null, FILE_36, path.join(models, 'qwen36'));
 }
@@ -654,7 +654,7 @@ async function stepPreset(cfg) {
   const m38 = await findShard(path.join(models, 'qwen38', cfg.quant));
   const m36 = path.join(models, 'qwen36', FILE_36);
   if (!m38 || !fs.existsSync(m36)) throw new Error('모델 파일을 못 찾음');
-  if (cfg.mtp && !fs.existsSync(path.join(models, 'qwen38', 'MTP', path.basename(MTP_FILE)))) {
+  if (cfg.mtp && !fs.existsSync(path.join(models, 'qwen38', MTP_DIR, cfg.mtpFile))) {
     throw new Error('MTP 사이드카 파일을 못 찾음');
   }
 
@@ -672,7 +672,7 @@ async function stepPreset(cfg) {
     'b = 2048',
     'ub = 512',
     'jinja = true',
-    'load-mode = mmap',
+    `load-mode = ${cfg.loadMode}`,
     `poll = ${cfg.poll}`,
     // cpu-strict는 0 또는 1만 받는다. true로 쓰면 인자 파싱에서 죽는다.
     ...(cfg.cpuMask ? [`cpu-mask = ${cfg.cpuMask}`, 'cpu-strict = 1'] : []),
@@ -686,7 +686,7 @@ async function stepPreset(cfg) {
     `n-cpu-moe = ${cfg.ncmoe38}`,
     // MTP 드래프트. 헤드는 GPU에 두고 초안 2개까지 검증한다. unsloth 빌드에서만 인식된다.
     ...(cfg.mtp ? [
-      `model-draft = ${path.join(models, 'qwen38', 'MTP', path.basename(MTP_FILE))}`,
+      `model-draft = ${path.join(models, 'qwen38', MTP_DIR, cfg.mtpFile)}`,
       'spec-type = draft-mtp',
       'spec-draft-n-max = 2'
     ] : []),
@@ -829,6 +829,7 @@ module.exports = {
   pickRelease,
   hfTree,
   moveStrayMtp,
+  stepPreset,
   pickUnslothRelease,
   findServerDir,
   downloadParallel,
