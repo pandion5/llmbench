@@ -47,7 +47,7 @@
     kwhPrice: 150,
     autoLoad36: true,
     mtp: false,
-    mtpFile: 'mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf',
+    mtpFile: 'mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf',
     loadMode: 'mmap',
     ncmoe38: 99,
     poll: 50,
@@ -573,6 +573,42 @@
     diag: {
       copy: function () { return Promise.resolve({ chars: 4210 }); },
       share: function () { return Promise.resolve({ url: 'https://paste.rs/mock', chars: 4210 }); }
+    },
+    wg: {
+      info: function () {
+        return Promise.resolve({
+          installed: true, version: 'wireguard-tools v1.0.20210914', configured: true,
+          serverPublicKey: 'MOCKSERVERPUBKEY', address: '10.66.0.1', port: 51820,
+          endpoint: '203.0.113.7', serve: true, apiKey: 'mockapikey1234567890',
+          peers: [{ name: '노트북', address: '10.66.0.2', publicKey: 'MOCKPEER1' }],
+          firewall: { udp: true, tcp: true },
+          listen: { port: 8080, addresses: ['0.0.0.0'], open: true },
+          blocked: [],
+          status: { installed: true, running: true, tunnel: 'llmbench', listenPort: 51820,
+            peers: [{ publicKey: 'MOCKPEER1', name: '노트북', endpoint: '198.51.100.9:1234',
+              allowedIps: '10.66.0.2/32', lastHandshake: new Date().toISOString(), rxBytes: 1024, txBytes: 2048 }] }
+        });
+      },
+      publicIp: function () { return Promise.resolve('203.0.113.7'); },
+      unblock: function () { return Promise.resolve({ ok: true, left: [] }); },
+      localIps: function () { return Promise.resolve([{ name: '이더넷', address: '192.168.0.30', virtual: false }]); },
+      up: function () { return Promise.resolve({ ok: true }); },
+      down: function () { return Promise.resolve({ ok: true }); },
+      addPeer: function (n) { return Promise.resolve({ name: n, address: '10.66.0.3' }); },
+      removePeer: function () { return Promise.resolve({ ok: true }); },
+      setEndpoint: function (ep) { return Promise.resolve({ endpoint: ep }); },
+      setServe: function (on) { return Promise.resolve({ serve: on }); },
+      rotateApiKey: function () { return Promise.resolve({ apiKey: 'newmockapikey0987654321' }); },
+      invite: function () { return Promise.resolve('LLMB1.bW9ja2ludml0ZWNvZGU'); },
+      peerConf: function () { return Promise.resolve('[Interface]' + String.fromCharCode(10) + 'PrivateKey = MOCK' + String.fromCharCode(10)); },
+      savePeerConf: function () { return Promise.resolve({ saved: true, path: 'C:\temp\peer.conf' }); }
+    },
+    term: {
+      start: function () { return Promise.resolve({ ok: true }); },
+      write: function () { return Promise.resolve({ ok: true }); },
+      resize: function () { return Promise.resolve({ ok: true }); },
+      kill: function () { return Promise.resolve({ ok: true }); },
+      snapshot: function () { return Promise.resolve({ running: true, buf: 'C:\\workspace>' }); }
     },
     shell: {
       openPath: function (p) { console.log('[mock] openPath', p); return Promise.resolve(); }

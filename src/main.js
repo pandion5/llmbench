@@ -14,6 +14,8 @@ const server = require('./server');
 const bench = require('./bench');
 const harness = require('./harness');
 const update = require('./update');
+const terminal = require('./terminal');
+const wireguard = require('./wireguard');
 
 const INDEX_HTML = path.join(__dirname, 'renderer', 'index.html');
 let monitorTimer = null;
@@ -147,6 +149,12 @@ async function listModelFiles(installDir) {
   return out.length ? out : ['모델 폴더가 비어 있거나 없음'];
 }
 
+// 키 같은 값을 그대로 내보내지 않는다.
+function mask(v) {
+  if (!v) return null;
+  return `${String(v).slice(0, 6)}... (${String(v).length}자)`;
+}
+
 async function buildDiag() {
   const cfg = await config.get();
   const lines = [
@@ -164,6 +172,33 @@ async function buildDiag() {
   }
 
   lines.push('', '[models.ini]', await readOr(path.join(cfg.installDir, 'models.ini'), '읽지 못함'));
+
+  // 키가 들어간 값은 앞 6자만 남긴다. 진단은 외부에 올라갈 수 있다.
+  lines.push('', '[WireGuard]');
+  try {
+    const wi = await wireguard.info();
+    lines.push(
+      JSON.stringify(
+        {
+          installed: wi.installed,
+          version: wi.version,
+          configured: wi.configured,
+          address: wi.address,
+          port: wi.port,
+          endpoint: wi.endpoint,
+          serverPublicKey: mask(wi.serverPublicKey),
+          apiKey: mask(wi.apiKey),
+          peers: wi.peers.map((p) => ({ name: p.name, address: p.address, publicKey: mask(p.publicKey) })),
+          running: wi.status.running,
+          connected: wi.status.peers.map((p) => ({ name: p.name, lastHandshake: p.lastHandshake }))
+        },
+        null,
+        2
+      )
+    );
+  } catch (e) {
+    lines.push(`조회 실패: ${e.message}`);
+  }
 
   lines.push('', '[bin]');
   const bin = path.join(cfg.installDir, 'bin');
@@ -242,7 +277,12 @@ function registerIpc() {
   ipcMain.handle('install:cancel', () => install.cancel());
   ipcMain.handle('install:status', () => install.status());
 
-  ipcMain.handle('server:start', async () => server.start(await config.get()));
+  ipcMain.handle('server:start', async () => {
+    // 공유를 켜 뒀으면 모든 주소에서 받고 API 키를 건다. 설정은 파일에 있어서
+    // 어느 화면에서 시작하든, 앱을 다시 켠 뒤에도 같게 동작한다.
+    const share = (await wireguard.serve()) ? { apiKey: await wireguard.apiKey() } : null;
+    return server.start(await config.get(), { share });
+  });
   ipcMain.handle('server:stop', () => server.stop());
   ipcMain.handle('server:status', () => server.refresh());
   ipcMain.handle('server:logs', () => server.logs());
@@ -271,9 +311,51 @@ function registerIpc() {
 
   ipcMain.handle('monitor:snapshot', async () => sys.getSnapshot((await config.get()).installDir));
 
-  ipcMain.handle('bench:run', async (_e, opts) => bench.run(opts, await config.get()));
+  ipcMain.handle('bench:run', async (_e, opts) => {
+    const res = await bench.run(opts, await config.get());
+    // 결과는 끝나는 대로 남긴다. 저장 버튼을 안 눌러 결과가 사라지는 일이 있었다.
+    try {
+      const saved = await withLogsDir('bench-logs', (dir) => bench.exportLast(dir));
+      res.savedTo = saved.path;
+    } catch (e) {
+      res.saveError = e.message;
+    }
+    return res;
+  });
   ipcMain.handle('bench:cancel', () => bench.cancel());
   ipcMain.handle('bench:export', () => withLogsDir('bench-logs', (dir) => bench.exportLast(dir)));
+
+  ipcMain.handle('wg:info', () => wireguard.info());
+  ipcMain.handle('wg:publicIp', () => wireguard.publicIp());
+  ipcMain.handle('wg:localIps', () => wireguard.localIps());
+  ipcMain.handle('wg:unblock', () => wireguard.disableBlockingRules());
+  ipcMain.handle('wg:up', () => wireguard.up());
+  ipcMain.handle('wg:down', () => wireguard.down());
+  ipcMain.handle('wg:addPeer', (_e, name) => wireguard.addPeer(name));
+  ipcMain.handle('wg:removePeer', (_e, name) => wireguard.removePeer(name));
+  ipcMain.handle('wg:setEndpoint', (_e, ep) => wireguard.setEndpoint(ep));
+  ipcMain.handle('wg:setServe', (_e, on) => wireguard.setServe(on));
+  ipcMain.handle('wg:rotateApiKey', () => wireguard.rotateApiKey());
+  ipcMain.handle('wg:invite', (_e, name) => wireguard.invite(name));
+  ipcMain.handle('wg:peerConf', (_e, name) => wireguard.peerConf(name));
+  // 클라이언트 설정에는 개인 키가 들어 있다. 파일로 내보낼 때만 디스크에 쓴다.
+  ipcMain.handle('wg:savePeerConf', async (_e, name) => {
+    const text = await wireguard.peerConf(name);
+    const r = await dialog.showSaveDialog({
+      title: 'WireGuard 설정 저장',
+      defaultPath: `${name}.conf`,
+      filters: [{ name: 'WireGuard', extensions: ['conf'] }]
+    });
+    if (r.canceled || !r.filePath) return { saved: false };
+    await fsp.writeFile(r.filePath, text, 'utf8');
+    return { saved: true, path: r.filePath };
+  });
+
+  ipcMain.handle('term:start', (_e, id, opts) => terminal.start(id, opts));
+  ipcMain.handle('term:write', (_e, id, data) => terminal.write(id, data));
+  ipcMain.handle('term:resize', (_e, id, cols, rows) => terminal.resize(id, cols, rows));
+  ipcMain.handle('term:kill', (_e, id) => terminal.kill(id));
+  ipcMain.handle('term:snapshot', (_e, id) => terminal.snapshot(id));
 
   ipcMain.handle('harness:list', () => harness.list());
   ipcMain.handle('harness:install', (_e, id) => harness.install(id));
@@ -291,6 +373,7 @@ function registerIpc() {
   bench.onProgress((p) => broadcast('bench:progress', p));
   harness.onLog((line) => broadcast('harness:log', line));
   update.onProgress((p) => broadcast('update:progress', p));
+  terminal.onEvent((e) => broadcast('term:event', e));
 }
 
 // 1초마다 스냅샷을 보낸다. nvidia-smi 호출이 1초를 넘기면 그 회차는 건너뛴다.
@@ -339,5 +422,6 @@ app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => {
   if (monitorTimer) clearInterval(monitorTimer);
   install.cancel();
+  terminal.killAll();
   server.stop();
 });

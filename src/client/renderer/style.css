@@ -1,0 +1,223 @@
+/* 클라이언트 화면. 서버 앱과 같은 색을 쓰되 대화창 위주로 짠다. */
+:root {
+  --bg: #0f1115;
+  --bg-2: #161922;
+  --bg-3: #1e222c;
+  --fg: #d7dae0;
+  --fg-dim: #8b93a3;
+  --line: #2a2f3a;
+  --accent: #4f8cff;
+  --mine: #23314a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.6 "Malgun Gothic", "Segoe UI", sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.brand { font-weight: 700; }
+.tabs { display: flex; gap: 4px; }
+.tab {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.tab.is-active { background: var(--bg-3); color: var(--fg); }
+.topbar-status { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.st-ready { color: #7ee2a8; border-color: #2f5f45; }
+.st-stopped { color: var(--fg-dim); }
+.st-error { color: #ff8f8f; border-color: #5f2f2f; }
+
+main { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.panel { display: none; height: 100%; }
+.panel.is-active { display: flex; flex-direction: column; }
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.card.narrow { max-width: 640px; margin: 48px auto; }
+.card h2 { margin: 0 0 12px; font-size: 15px; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+.hint { color: var(--fg-dim); font-size: 13px; }
+
+.btn {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: 0.5; cursor: default; border-color: var(--line); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 13px; }
+
+input[type="text"], select, textarea {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+  width: 100%;
+}
+textarea { resize: vertical; font-family: inherit; }
+
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; margin: 0; }
+.kv dt { color: var(--fg-dim); }
+.kv dd { margin: 0; }
+
+.grid { width: 100%; border-collapse: collapse; margin: 10px 0; }
+.grid th, .grid td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.grid th { color: var(--fg-dim); font-weight: 500; }
+
+.log {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 대화 */
+.chat-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.chat-head select { width: auto; }
+.chat-head .hint { margin-left: auto; }
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msg { max-width: 80%; padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+.msg-user { align-self: flex-end; background: var(--mine); }
+.msg-bot { align-self: flex-start; background: var(--bg-2); border: 1px solid var(--line); }
+.msg-meta { font-size: 12px; color: var(--fg-dim); margin-top: 6px; }
+
+/* 생각하는 모델은 답을 내기 전에 긴 사고 과정을 보낸다. 본문 위에 접어 둔다. */
+/* 생각 과정이 붙은 말풍선은 읽을 폭이 필요하다. 짧은 답에 맞춰 좁아지지 않게 한다. */
+.msg-bot:has(.think) { width: min(560px, 100%); max-width: 100%; }
+
+.think {
+  min-width: 0;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.think > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.think > summary::-webkit-details-marker { display: none; }
+.think > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.think[open] > summary::before { transform: rotate(45deg); }
+/* 접혀 있을 때는 답이 주인공이다. 테두리를 지우고 손을 올릴 때만 되살린다. */
+.think:not([open]) {
+  width: fit-content;
+  border-color: transparent;
+  background: transparent;
+  margin-bottom: 4px;
+}
+.think:not([open]) > summary { padding-left: 0; }
+.think:not([open]):hover { border-color: var(--line); }
+.think > summary:hover { color: var(--fg); }
+.think > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.think-body {
+  max-height: 168px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 10px 8px 23px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.think-body::-webkit-scrollbar { width: 8px; }
+.think-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.think-body::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+.think-body::-webkit-scrollbar-track { background: transparent; }
+.msg-error { align-self: flex-start; background: #2a1c1c; border: 1px solid #5f2f2f; }
+
+.chat-input { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; }
+.chat-buttons { display: flex; flex-direction: column; gap: 6px; }
+.chat-buttons .btn { white-space: nowrap; }
+
+#term-host {
+  height: 380px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f1115;
+}
+#term-host .xterm { height: 100%; }

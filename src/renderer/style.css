@@ -233,6 +233,20 @@ main { padding: 16px; max-width: 1100px; }
 
 .form label { color: var(--fg-dim); }
 
+/* 폼 안에서 항목을 묶는 소제목. 2열 그리드 전체를 차지한다. */
+.form-group {
+  grid-column: 1 / -1;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+.form-group:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
+.form-check { display: flex; align-items: center; }
+.form .form-check input { width: auto; margin: 0; }
+
 .form input, .form select, #bench-model {
   background: var(--bg);
   color: var(--fg);
@@ -407,3 +421,13 @@ canvas { width: 100%; height: 120px; display: block; }
 
 /* 튜닝 결과에서 가장 빠른 조합 행 */
 .row-best th, .row-best td { background: rgba(80, 200, 120, 0.15); font-weight: 600; }
+
+/* 앱 안 터미널. 카드 안에서 일정 높이를 차지한다. */
+#term-host {
+  height: 420px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f1115;
+}
+#term-host .xterm { height: 100%; }

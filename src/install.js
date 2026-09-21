@@ -485,9 +485,11 @@ async function downloadLlamaCpp(binDir, onTick, driverVersion) {
 
 async function stepLlamaCpp(cfg) {
   const bin = path.join(cfg.installDir, 'bin');
-  const want = cfg.mtp ? 'unsloth' : 'upstream';
   const have = await readBuildInfo(bin);
   const haveSource = have ? have.source : fs.existsSync(path.join(bin, 'llama-server.exe')) ? 'upstream' : null;
+  // MTP를 끄더라도 이미 unsloth 빌드가 있으면 그대로 쓴다. unsloth 빌드는 본가 기능을 다 갖고
+  // 있어서 본가로 되돌리면 400MB를 다시 받을 뿐이다.
+  const want = cfg.mtp || haveSource === 'unsloth' ? 'unsloth' : 'upstream';
   if (haveSource === want) {
     setStep('llamacpp', { status: 'skipped', detail: `이미 설치됨 (${want}${have && have.tag ? ' ' + have.tag : ''})` });
     return;

@@ -56,15 +56,16 @@ function defaults(cores) {
 }
 
 // 아래로 갈수록 작고 빠르지만 품질이 떨어진다. Q2_K_XL·IQ1_M은 속도 실험용이다.
-// MTP 드래프트 헤드 파일. shared는 타깃 모델의 임베딩을 빌려 쓰는데 양자화가 다르면
-// 텐서 형상이 안 맞아 서버가 죽는다. IQ3에서는 자체 임베딩을 가진 쪽을 쓴다.
+// MTP 드래프트 헤드 파일. shared는 본체 모델의 임베딩을 빌려 써서 파일이 작고, unsloth 문서가
+// shared-Q8_0을 권한다. 시작할 때 borrow_shared_tensor 오류가 한 줄 찍히는 건 정상이다.
+// 자체 임베딩 파일은 빌림을 지원하지 않는 빌드용이고 드래프트 품질은 같다.
 const MTP_FILES = [
+  'mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf',
+  'mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf',
+  'mtp-Qwen3.8-Flash-Next-shared-BF16.gguf',
   'mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf',
   'mtp-Qwen3.8-Flash-Next-Q8_0.gguf',
-  'mtp-Qwen3.8-Flash-Next-BF16.gguf',
-  'mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf',
-  'mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf',
-  'mtp-Qwen3.8-Flash-Next-shared-BF16.gguf'
+  'mtp-Qwen3.8-Flash-Next-BF16.gguf'
 ];
 const LOAD_MODES = ['mmap', 'none'];
 

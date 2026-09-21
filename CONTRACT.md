@@ -42,7 +42,7 @@ Config = {
   kwhPrice: number,          // 원/kWh, 기본 150
   autoLoad36: boolean,       // 서버 시작 시 3.6도 로드. 기본 true. models.ini [qwen36] load-on-startup에 반영
   mtp: boolean,
-  mtpFile: string,           // MTP 헤드 파일명. 기본 mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf. shared 계열은 본체 임베딩을 빌려 쓴다
+  mtpFile: string,           // MTP 헤드 파일명. 기본 mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf. shared 계열은 본체 임베딩을 빌려 쓴다
   loadMode: 'mmap'|'none',   // models.ini [*] load-mode 드래프트. 기본 false. true면 llama.cpp를 unsloth 빌드로 받고 MTP 사이드카를 받아 [qwen38]에 model-draft/spec-type=draft-mtp/spec-draft-n-max=2 추가. bin/llmbench-build.json으로 빌드 종류 추적
   ncmoe38: number,           // 3.8 n-cpu-moe. 기본 99(전부 CPU). 0~99. models.ini와 llama-bench -ncmoe에 반영
   poll: number,              // llama-server --poll 0~100. 기본 50. models.ini [*] poll
@@ -174,6 +174,29 @@ launch 동작:
 설정, 하드웨어, models.ini, bin 구성, 모델 파일 목록, 서버 상태와 로그를 한 텍스트로 묶는다.
 - `api.diag.copy()` → `{ chars: number }`  클립보드에 넣는다.
 - `api.diag.share()` → `{ url: string, chars: number }`  paste.rs에 올리고 주소를 돌려준다. 공개로 올라가므로 화면에서 확인을 받은 뒤에만 부른다.
+
+### 공유 (wg)
+WireGuard 터널과 기기를 다룬다. 개인 키는 `info`에 나오지 않는다.
+- `api.wg.info()` → `{ installed, version, configured, serverPublicKey, address, port, endpoint, apiKey, peers, status }`
+- `api.wg.publicIp()` → `string|null`
+- `api.wg.localIps()` → `[{ name, address, virtual }]`  같은 공유기 안에서 쓸 주소 후보. 가상 어댑터는 뒤로 민다
+- `api.wg.up()` / `api.wg.down()` → `{ ok }`  터널 서비스를 올리거나 내린다
+- `api.wg.addPeer(name)` → `{ name, address, publicKey, privateKey }`
+- `api.wg.removePeer(name)` → `{ ok }`
+- `api.wg.setEndpoint(ep)` → `{ endpoint }`
+- `api.wg.rotateApiKey()` → `{ apiKey }`  키를 새로 만든다. 서버를 다시 시작해야 걸린다
+- `api.wg.peerConf(name)` → `string`  기기에 넣을 설정. 개인 키가 들어 있다
+- `api.wg.savePeerConf(name)` → `{ saved, path }`
+- `api.server.start({ share })` → share가 참이면 모든 주소에서 받고 API 키를 건다
+
+### 터미널 (term)
+ConPTY 세션을 앱 안에서 다룬다. 세션 id는 하네스 id를 그대로 쓴다.
+- `api.term.start(id, opts)` → `{ ok, reused, pid }`  opts는 `{ file, args, cwd, env, cols, rows }`
+- `api.term.write(id, data)` → `{ ok }`  키 입력을 그대로 보낸다
+- `api.term.resize(id, cols, rows)` → `{ ok }`
+- `api.term.kill(id)` → `{ ok }`
+- `api.term.snapshot(id)` → `{ running, buf }`  화면을 다시 그릴 때 쓴다
+- 이벤트 `term:event` → `{ type: 'data'|'exit', id, data?, exitCode? }`
 
 - `api.shell.openPath(p)`
 - `api.app.version()` → string  package.json version

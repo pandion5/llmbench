@@ -44,6 +44,29 @@ contextBridge.exposeInMainWorld('api', {
     copy: () => call('diag:copy'),
     share: () => call('diag:share')
   },
+  wg: {
+    info: () => call('wg:info'),
+    publicIp: () => call('wg:publicIp'),
+    localIps: () => call('wg:localIps'),
+    unblock: () => call('wg:unblock'),
+    up: () => call('wg:up'),
+    down: () => call('wg:down'),
+    addPeer: (name) => call('wg:addPeer', name),
+    removePeer: (name) => call('wg:removePeer', name),
+    setEndpoint: (ep) => call('wg:setEndpoint', ep),
+    setServe: (on) => call('wg:setServe', on),
+    rotateApiKey: () => call('wg:rotateApiKey'),
+    invite: (name) => call('wg:invite', name),
+    peerConf: (name) => call('wg:peerConf', name),
+    savePeerConf: (name) => call('wg:savePeerConf', name)
+  },
+  term: {
+    start: (id, opts) => call('term:start', id, opts),
+    write: (id, data) => call('term:write', id, data),
+    resize: (id, cols, rows) => call('term:resize', id, cols, rows),
+    kill: (id) => call('term:kill', id),
+    snapshot: (id) => call('term:snapshot', id)
+  },
   shell: {
     openPath: (p) => call('shell:openPath', p)
   },

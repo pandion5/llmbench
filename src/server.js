@@ -9,10 +9,19 @@ const { spawn } = require('child_process');
 const HOST = '127.0.0.1';
 const PORT = 8080;
 const BASE_URL = `http://${HOST}:${PORT}`;
+// 공유를 켜면 모든 주소에서 받는다. 대신 API 키를 걸고 방화벽으로 막는다.
+const SHARE_HOST = '0.0.0.0';
 const READY_TIMEOUT_MS = 15 * 60 * 1000; // 두 모델을 RAM에 올리는 데 몇 분 걸린다
 const LOG_MAX = 200;
 
-const state = { state: 'stopped', pid: null, models: [], error: null };
+// shared는 마지막으로 띄울 때 모든 주소에서 받게 했는지다. 화면에서 원인을 좁힐 때 쓴다.
+const state = { state: 'stopped', pid: null, models: [], error: null, shared: false };
+// 공유를 켜고 띄웠으면 이 키가 요청마다 필요하다.
+let currentApiKey = null;
+
+function authHeaders() {
+  return currentApiKey ? { Authorization: `Bearer ${currentApiKey}` } : {};
+}
 const logBuf = [];
 let child = null;
 let listener = null;
@@ -51,7 +60,7 @@ function pipeLines(stream) {
 
 async function health(baseUrl = BASE_URL, timeoutMs = 2000) {
   try {
-    const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(`${baseUrl}/health`, { headers: authHeaders(), signal: AbortSignal.timeout(timeoutMs) });
     return res.status === 200;
   } catch {
     return false;
@@ -87,7 +96,7 @@ function parseModels(body) {
 
 async function fetchModels(baseUrl = BASE_URL) {
   try {
-    const res = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`${baseUrl}/models`, { headers: authHeaders(), signal: AbortSignal.timeout(5000) });
     if (!res.ok) return [];
     return parseModels(await res.json());
   } catch {
@@ -106,8 +115,18 @@ function killTree(p) {
   });
 }
 
-function start(cfg) {
-  if (child && child.exitCode === null) return status();
+async function start(cfg, opts) {
+  const share = opts && opts.share;
+  if (child && child.exitCode === null) {
+    // 이미 떠 있는 서버는 인자를 바꿀 수 없다. 공유 설정이 달라졌으면 끄고 다시 띄운다.
+    const same = !!share === state.shared && (!share || share.apiKey === currentApiKey);
+    if (same) return status();
+    stop();
+    // 포트를 놓는 데 잠깐 걸린다. 그 사이에 준비 검사를 하면 죽은 서버를 살아 있다고 본다.
+    for (let i = 0; i < 20 && (await health()); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
 
   const exe = path.join(cfg.installDir, 'bin', 'llama-server.exe');
   const preset = path.join(cfg.installDir, 'models.ini');
@@ -126,11 +145,26 @@ function start(cfg) {
   logBuf.length = 0;
   emit();
 
-  child = spawn(
-    exe,
-    ['--models-preset', preset, '--models-max', '2', '--host', HOST, '--port', String(PORT)],
-    { cwd: path.dirname(exe), windowsHide: true }
-  );
+  const args = [
+    '--models-preset', preset, '--models-max', '2',
+    '--host', share ? SHARE_HOST : HOST,
+    '--port', String(PORT)
+  ];
+  // 키 없이 모든 주소에 열면 같은 네트워크 누구나 쓸 수 있다. 그건 막는다.
+  if (share && !share.apiKey) {
+    Object.assign(state, {
+      state: 'error',
+      pid: null,
+      models: [],
+      error: 'API 키가 없어 터널에 열지 않았다. 공유 탭에서 터널을 한 번 시작해 키를 만든다.'
+    });
+    emit();
+    return status();
+  }
+  currentApiKey = share && share.apiKey ? share.apiKey : null;
+  state.shared = !!share;
+  if (currentApiKey) args.push('--api-key', currentApiKey);
+  child = spawn(exe, args, { cwd: path.dirname(exe), windowsHide: true });
   pipeLines(child.stdout);
   pipeLines(child.stderr);
   state.pid = child.pid;
@@ -193,4 +227,4 @@ async function refresh() {
   return status();
 }
 
-module.exports = { start, stop, status, refresh, onStatus, logs, health, pollHealth, fetchModels, parseModels, BASE_URL };
+module.exports = { authHeaders, start, stop, status, refresh, onStatus, logs, health, pollHealth, fetchModels, parseModels, BASE_URL };

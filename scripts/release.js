@@ -46,8 +46,15 @@ pkg.version = version;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 console.log(`package.json version = ${version}`);
 
-fs.rmSync(DIST, { recursive: true, force: true });
+// dist 폴더 자체는 탐색기가 열고 있으면 못 지운다. 안에 든 것만 치운다.
 fs.mkdirSync(DIST, { recursive: true });
+for (const name of fs.readdirSync(DIST)) {
+  try {
+    fs.rmSync(path.join(DIST, name), { recursive: true, force: true });
+  } catch (e) {
+    console.log(`남겨 둔다(쓰는 중): ${name}`);
+  }
+}
 
 // 업데이트 zip. Windows 내장 tar(bsdtar)는 -a로 확장자에 맞춰 zip을 만든다.
 const updateZip = path.join(DIST, `llmbench-update-${version}.zip`);
@@ -60,12 +67,33 @@ console.log(`${path.basename(updateZip)} ${(fs.statSync(updateZip).size / 1024).
 const packOut = path.join(DIST, 'pack');
 sh('cmd', ['/c', 'npx', '@electron/packager', '.', 'llmbench',
   '--platform=win32', '--arch=x64', `--out=${packOut}`, '--asar=false', '--overwrite',
-  '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/node_modules', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
+  // node_modules는 넣는다. node-pty가 네이티브라 빠지면 앱 안 터미널이 안 돈다.
+  // packager가 devDependencies는 알아서 걷어낸다.
+  '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/test', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
   '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs',
   '--win32metadata.requested-execution-level=requireAdministrator',
   '--win32metadata.ProductName=llmbench', '--win32metadata.FileDescription=llmbench']);
+// 클라이언트 exe. 같은 코드에서 실행 파일 이름만 바꿔 뽑는다. entry.js가 이름으로 갈라 띄운다.
+sh('cmd', ['/c', 'npx', '@electron/packager', '.', 'llmbench-client',
+  '--platform=win32', '--arch=x64', `--out=${packOut}`, '--asar=false', '--overwrite',
+  '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/test', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
+  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs',
+  // 터널을 올리려면 관리자 권한이 필요하다. 서버 exe와 같게 매니페스트를 넣는다.
+  '--win32metadata.requested-execution-level=requireAdministrator',
+  '--win32metadata.ProductName=llmbench client', '--win32metadata.FileDescription=llmbench client']);
+const clientZip = path.join(DIST, `llmbench-client-${version}.zip`);
+sh(TAR, ['-a', '-cf', clientZip, '-C', packOut, 'llmbench-client-win32-x64']);
+console.log(`${path.basename(clientZip)} ${(fs.statSync(clientZip).size / 1048576).toFixed(0)}MB (llmbench-client-win32-x64/llmbench-client.exe)`);
+
 const portableZip = path.join(DIST, `llmbench-portable-${version}.zip`);
 sh(TAR, ['-a', '-cf', portableZip, '-C', packOut, 'llmbench-win32-x64']);
+// 네이티브 모듈이 실제로 들어갔는지 본다. 빠지면 앱 안 터미널이 안 돈다.
+for (const name of ['llmbench-win32-x64', 'llmbench-client-win32-x64']) {
+  const ptyDir = path.join(packOut, name, 'resources', 'app', 'node_modules', '@lydell');
+  if (!fs.existsSync(ptyDir)) {
+    throw new Error(`패키지에 node-pty가 없다: ${ptyDir}`);
+  }
+}
 fs.rmSync(packOut, { recursive: true, force: true });
 console.log(`${path.basename(portableZip)} ${(fs.statSync(portableZip).size / 1048576).toFixed(0)}MB (llmbench-win32-x64/llmbench.exe)`);
 
@@ -80,7 +108,7 @@ fs.writeFileSync(path.join(DIST, 'update.json'), JSON.stringify(manifest, null, 
 console.log('update.json 작성');
 
 if (publish) {
-  sh('gh', ['release', 'create', `v${version}`, updateZip, portableZip, path.join(DIST, 'update.json'),
+  sh('gh', ['release', 'create', `v${version}`, updateZip, portableZip, clientZip, path.join(DIST, 'update.json'),
     '--repo', REPO, '--title', `llmbench v${version}`, '--notes', notes || `v${version}`]);
   console.log(`GitHub Release v${version} 게시`);
 } else {

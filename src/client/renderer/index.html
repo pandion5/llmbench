@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>llmbench client</title>
+  <link rel="stylesheet" href="../../renderer/vendor/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">llmbench</span>
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab is-active" role="tab" id="tab-chat" data-tab="chat" aria-selected="true" aria-controls="panel-chat">대화</button>
+      <button type="button" class="tab" role="tab" id="tab-harness" data-tab="harness" aria-selected="false" aria-controls="panel-harness">하네스</button>
+      <button type="button" class="tab" role="tab" id="tab-conn" data-tab="conn" aria-selected="false" aria-controls="panel-conn">연결</button>
+    </nav>
+    <div class="topbar-status">
+      <span id="version-badge" class="badge"></span>
+      <button type="button" class="btn btn-sm btn-primary" id="update-btn" hidden></button>
+      <span id="conn-badge" class="badge st-stopped">연결 확인 중</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 첫 실행 -->
+    <section class="panel is-active" id="panel-setup" hidden>
+      <div class="card narrow">
+        <h2>초대 코드</h2>
+        <p class="hint">서버 PC의 공유 탭에서 기기를 추가하고 초대 코드를 만든다. 그 코드를 여기에 붙여넣는다.</p>
+        <textarea id="setup-code" rows="5" spellcheck="false" placeholder="LLMB1..."></textarea>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="setup-apply">연결</button>
+          <span class="hint" id="setup-msg" aria-live="polite"></span>
+        </div>
+        <p class="hint" id="setup-wg" hidden>이 PC에 WireGuard가 없다. <a href="https://www.wireguard.com/install/" id="setup-wg-link">wireguard.com</a>에서 받아 설치한 뒤 다시 연다.</p>
+      </div>
+    </section>
+
+    <!-- 대화 -->
+    <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+      <div class="chat-head">
+        <label for="chat-model">모델</label>
+        <select id="chat-model">
+          <option value="qwen38">qwen38</option>
+          <option value="qwen36">qwen36</option>
+        </select>
+        <button type="button" class="btn btn-sm" id="chat-clear">새 대화</button>
+        <span class="hint" id="chat-stat"></span>
+      </div>
+      <div class="chat-log" id="chat-log" aria-live="polite"></div>
+      <div class="chat-input">
+        <textarea id="chat-text" rows="3" placeholder="물어볼 내용을 적는다. Ctrl+Enter로 보낸다."></textarea>
+        <div class="chat-buttons">
+          <button type="button" class="btn btn-primary" id="chat-send">보내기</button>
+          <button type="button" class="btn" id="chat-stop" disabled>중지</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 하네스 -->
+    <section class="panel" id="panel-harness" role="tabpanel" aria-labelledby="tab-harness" hidden>
+      <p class="hint">코딩 CLI를 이 PC에 설치하고, 서버의 모델을 보게 해서 아래 터미널에서 연다.</p>
+      <table class="grid" id="harness-table">
+        <caption class="sr-only">하네스 목록</caption>
+        <thead>
+          <tr><th scope="col">이름</th><th scope="col">설명</th><th scope="col">설치 상태</th><th scope="col">실행</th></tr>
+        </thead>
+        <tbody id="harness-rows"></tbody>
+      </table>
+      <div class="row">
+        <label for="harness-workdir">작업 폴더</label>
+        <input type="text" id="harness-workdir" placeholder="비우면 사용자 폴더" spellcheck="false">
+        <button type="button" class="btn btn-sm" id="harness-pick">고르기</button>
+        <label for="harness-model">모델</label>
+        <select id="harness-model">
+          <option value="qwen38">qwen38</option>
+          <option value="qwen36">qwen36</option>
+        </select>
+      </div>
+      <p class="hint" id="harness-msg" aria-live="polite"></p>
+
+      <div class="card" id="term-card" hidden>
+        <h2>터미널</h2>
+        <div class="row">
+          <span class="hint" id="term-title"></span>
+          <button type="button" class="btn btn-sm" id="term-kill">종료</button>
+        </div>
+        <div id="term-host"></div>
+      </div>
+
+      <div class="card">
+        <h2>설치 로그</h2>
+        <pre class="log" id="harness-log" tabindex="0" aria-label="하네스 설치 로그"></pre>
+      </div>
+    </section>
+
+    <!-- 연결 -->
+    <section class="panel" id="panel-conn" role="tabpanel" aria-labelledby="tab-conn" hidden>
+      <div class="card">
+        <h2>상태</h2>
+        <dl class="kv" id="conn-kv"></dl>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="conn-up">연결</button>
+          <button type="button" class="btn" id="conn-down">끊기</button>
+          <button type="button" class="btn" id="conn-check">서버 확인</button>
+          <span class="hint" id="conn-msg" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>다시 설정</h2>
+        <p class="hint">서버 주소나 키가 바뀌었으면 새 초대 코드를 받아 넣는다.</p>
+        <textarea id="conn-code" rows="4" spellcheck="false" placeholder="LLMB1..."></textarea>
+        <div class="row">
+          <button type="button" class="btn" id="conn-apply">새 초대 코드 넣기</button>
+          <button type="button" class="btn" id="conn-forget">연결 정보 지우기</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../../renderer/vendor/xterm.js"></script>
+  <script src="../../renderer/vendor/addon-fit.js"></script>
+  <script>
+    // 브라우저에서 바로 열면 목 API를 먼저 읽는다. 앱에서는 preload가 이미 넣어 둬서 건너뛴다.
+    if (!window.api) document.write('<script src="mock-api.js"><\/script>');
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>

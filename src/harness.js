@@ -1,6 +1,6 @@
 'use strict';
-// 코딩 에이전트 CLI(하네스)를 외부 콘솔 창으로 띄운다.
-// 앱 안에 화면을 두지 않고 설치 여부 확인, npm 전역 설치, 터미널 실행만 맡는다.
+// 코딩 에이전트 CLI(하네스)를 앱 안 터미널에서 띄운다.
+// 설치 여부 확인, npm 전역 설치, 터미널 시작을 맡는다. 화면 표시는 렌더러가 한다.
 
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -9,12 +9,23 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const sys = require('./sys');
+const terminal = require('./terminal');
 const server = require('./server');
 const config = require('./config');
 
 // npm 전역 설치본은 .cmd 래퍼라 Node 22에서 shell 없이 spawn하면 EINVAL이 난다.
 // 그래서 확인·설치·실행 모두 cmd /c를 거친다.
+// 맨 위가 기본으로 쓰는 하네스다. 화면 표도 이 순서로 그린다.
 const DEFS = [
+  {
+    id: 'openclaude',
+    name: 'OpenClaude',
+    npm: '@gitlawb/openclaude',
+    bin: 'openclaude',
+    note: '기본. Claude Code 계열 CLI. 설정 파일 없이 환경변수로 llama-server를 가리킨다.',
+    // 이 CLI는 OpenAI 호환 모드를 켜야 OPENAI_BASE_URL을 본다.
+    extraEnv: { CLAUDE_CODE_USE_OPENAI: '1' }
+  },
   {
     id: 'qwen-code',
     name: 'Qwen Code',
@@ -31,8 +42,17 @@ const DEFS = [
   }
 ];
 
+// 기본 하네스. 화면에서 따로 안 고르면 이걸 쓴다.
+const DEFAULT_HARNESS = 'openclaude';
+
 const BASE_URL = `${server.BASE_URL}/v1`;
+// 공유를 켜면 llama-server에 키가 걸린다. 그때는 그 키를 넘겨야 한다.
 const API_KEY = 'local';
+
+function currentApiKey() {
+  const h = server.authHeaders();
+  return h.Authorization ? h.Authorization.replace(/^Bearer /, '') : API_KEY;
+}
 
 let listener = null;
 
@@ -132,10 +152,11 @@ function qwenSettingsPath() {
 
 // llama-server를 OpenAI 호환 공급자로 등록한 설정을 기존 값에 얹는다.
 // 사용자가 쓰던 다른 키는 그대로 두고 같은 id의 항목만 갱신한다.
-function mergeQwenSettings(prev, model) {
+function mergeQwenSettings(prev, model, baseUrl) {
+  const url = baseUrl || BASE_URL;
   const entries = [
-    { id: 'qwen38', name: 'Qwen3.8 (llama-server)', baseUrl: BASE_URL, envKey: 'OPENAI_API_KEY' },
-    { id: 'qwen36', name: 'Qwen3.6 (llama-server)', baseUrl: BASE_URL, envKey: 'OPENAI_API_KEY' }
+    { id: 'qwen38', name: 'Qwen3.8 (llama-server)', baseUrl: url, envKey: 'OPENAI_API_KEY' },
+    { id: 'qwen36', name: 'Qwen3.6 (llama-server)', baseUrl: url, envKey: 'OPENAI_API_KEY' }
   ];
   const base = prev && typeof prev === 'object' ? prev : {};
   const providers = { ...(base.modelProviders || {}) };
@@ -159,14 +180,14 @@ function mergeQwenSettings(prev, model) {
 // [전언: Qwen Code 공식 문서] 설정 파일은 ~/.qwen/settings.json.
 // OpenCode 전역 설정. llama-server를 프로바이더로 등록하고 plan은 3.8, build는 3.6을 쓴다.
 // 기존 파일은 .bak으로 남기고 통째로 덮어쓴다. 사용자가 손본 다른 프로바이더는 보존하지 않는다.
-function opencodeConfig(ctx, model) {
+function opencodeConfig(ctx, model, baseUrl) {
   return {
     $schema: 'https://opencode.ai/config.json',
     provider: {
       'llama.cpp': {
         npm: '@ai-sdk/openai-compatible',
         name: 'llama-server (local)',
-        options: { baseURL: BASE_URL },
+        options: { baseURL: baseUrl || BASE_URL },
         models: {
           qwen38: { name: 'Qwen3.8 Flash Next (계획/리뷰)', limit: { context: ctx, output: 16384 } },
           qwen36: { name: 'Qwen3.6 35B (실행)', limit: { context: ctx, output: 16384 } }
@@ -181,7 +202,7 @@ function opencodeConfig(ctx, model) {
   };
 }
 
-async function writeOpencodeConfig(ctx, model) {
+async function writeOpencodeConfig(ctx, model, baseUrl) {
   const dir = path.join(os.homedir(), '.config', 'opencode');
   const file = path.join(dir, 'opencode.json');
   await fsp.mkdir(dir, { recursive: true });
@@ -190,12 +211,12 @@ async function writeOpencodeConfig(ctx, model) {
   } catch {
     // 처음이면 백업할 파일이 없다
   }
-  await fsp.writeFile(file, JSON.stringify(opencodeConfig(ctx, model), null, 2), 'utf8');
+  await fsp.writeFile(file, JSON.stringify(opencodeConfig(ctx, model, baseUrl), null, 2), 'utf8');
   return file;
 }
 
 // 기존 파일이 있으면 .bak으로 한 부 남기고 병합한다.
-async function writeQwenSettings(model) {
+async function writeQwenSettings(model, baseUrl) {
   const file = qwenSettingsPath();
   await fsp.mkdir(path.dirname(file), { recursive: true });
   let prev = null;
@@ -206,7 +227,7 @@ async function writeQwenSettings(model) {
   } catch {
     // 파일이 없거나 JSON이 깨졌으면 새로 만든다
   }
-  await fsp.writeFile(file, JSON.stringify(mergeQwenSettings(prev, model), null, 2), 'utf8');
+  await fsp.writeFile(file, JSON.stringify(mergeQwenSettings(prev, model, baseUrl), null, 2), 'utf8');
   return file;
 }
 
@@ -234,26 +255,69 @@ async function launchTerminal(id, opts, cfg) {
     return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
   }
 
-  // workDir은 위에서 검증했다. title과 bin은 이 파일 안의 상수라 외부 입력이 아니다.
-  const title = `llmbench ${d.name}`;
-  const args = ['/c', 'start', title, '/D', workDir, 'cmd', '/k', d.bin];
+  // workDir은 위에서 검증했다. bin은 이 파일 안의 상수라 외부 입력이 아니다.
+  // cmd /k로 띄워서 CLI가 끝나도 터미널은 남는다.
   try {
-    const child = spawn('cmd', args, {
-      detached: true,
-      stdio: 'ignore',
+    terminal.start(id, {
+      args: ['/k', d.bin],
+      cwd: workDir,
+      cols: (opts && opts.cols) || 100,
+      rows: (opts && opts.rows) || 30,
       env: {
-        ...process.env,
         OPENAI_BASE_URL: BASE_URL,
-        OPENAI_API_KEY: API_KEY,
-        OPENAI_MODEL: model
+        OPENAI_API_KEY: currentApiKey(),
+        OPENAI_MODEL: model,
+        ...(d.extraEnv || {})
       }
     });
-    child.unref();
   } catch (e) {
-    return { ok: false, error: `콘솔 창을 띄우지 못함: ${e.message}` };
+    return { ok: false, error: `터미널을 띄우지 못함: ${e.message}` };
   }
   log(`${d.name} 실행: ${workDir} (모델 ${model})`);
-  return { ok: true, error: null };
+  return { ok: true, error: null, term: id };
+}
+
+/**
+ * 다른 PC의 llama-server를 보고 띄운다. 클라이언트 앱이 쓴다.
+ * target은 { baseUrl, apiKey }. 작업 폴더는 사용자가 고른 것을 그대로 쓴다.
+ */
+async function launchRemote(id, opts, target) {
+  const d = def(id);
+  if (!d) return { ok: false, error: `알 수 없는 하네스: ${id}` };
+  if (!(await info(d)).installed) {
+    return { ok: false, error: `${d.name}이 설치돼 있지 않다. 설치를 먼저 한다.` };
+  }
+
+  const model = (opts && opts.model) || 'qwen38';
+  const workDir = (opts && opts.workDir) || process.env.USERPROFILE || os.homedir();
+  if (!fs.existsSync(workDir)) return { ok: false, error: `작업 폴더가 없다: ${workDir}` };
+
+  const v1 = `${target.baseUrl}/v1`;
+  try {
+    if (d.id === 'qwen-code') log(`Qwen Code 설정 갱신: ${await writeQwenSettings(model, v1)}`);
+    if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig((opts && opts.ctx) || 65536, model, v1)}`);
+  } catch (e) {
+    return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
+  }
+
+  try {
+    terminal.start(id, {
+      args: ['/k', d.bin],
+      cwd: workDir,
+      cols: (opts && opts.cols) || 100,
+      rows: (opts && opts.rows) || 30,
+      env: {
+        OPENAI_BASE_URL: v1,
+        OPENAI_API_KEY: target.apiKey || 'local',
+        OPENAI_MODEL: model,
+        ...(d.extraEnv || {})
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: `터미널을 띄우지 못함: ${e.message}` };
+  }
+  log(`${d.name} 실행: ${workDir} (모델 ${model}, 서버 ${target.baseUrl})`);
+  return { ok: true, error: null, term: id };
 }
 
 async function launch(id, opts, cfg) {
@@ -269,9 +333,11 @@ async function launch(id, opts, cfg) {
 }
 
 module.exports = {
+  DEFAULT_HARNESS,
   list,
   install,
   launch,
+  launchRemote,
   launchTerminal,
   onLog,
   mergeQwenSettings,

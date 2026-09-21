@@ -1,12 +1,14 @@
 {
   "name": "llmbench",
-  "version": "0.3.7",
+  "version": "0.8.0",
   "description": "로컬 LLM(llama.cpp router) 점검, 설치, 모니터, 벤치마크 도구",
-  "main": "src/main.js",
+  "main": "src/entry.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "release": "node scripts/release.js"
+    "release": "node scripts/release.js",
+    "test": "node test/bench-retry.test.js",
+    "start:client": "set LLMBENCH_ROLE=client&& electron ."
   },
   "build": {
     "appId": "local.llmbench",
@@ -17,5 +19,10 @@
   "devDependencies": {
     "@electron/packager": "^20.3.0",
     "electron": "^33.2.1"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.15",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
   }
 }

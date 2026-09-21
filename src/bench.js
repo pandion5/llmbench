@@ -90,7 +90,7 @@ async function runOne(prompt, model, idx, total, baseUrl) {
     try {
       res = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...server.authHeaders() },
         signal: controller.signal,
         body
       });
@@ -174,6 +174,64 @@ function pCoreMask(cpu) {
 
 // 스레드·poll·cpu-mask 조합을 llama-bench 한 번에 돌린다(값을 쉼표로 넘기면 조합 전부 실행).
 // tg128만 잰다. 모델 로드는 한 번이라 조합 수만큼 곱해도 몇 분이면 끝난다.
+// llama-bench의 모델 적재 옵션은 빌드마다 이름이 다르다. 본가 최신은 --load-mode,
+// 예전 빌드는 -mmp(--mmap)다. 없는 이름을 넘기면 그대로 죽으므로 도움말을 보고 고른다.
+// 판별 결과를 담아 둔다. 객체로 두면 테스트에서 값을 정해 넣을 수 있다.
+const loadModeState = { flag: null };
+function loadModeArgs(exe, loadMode) {
+  if (loadModeState.flag === null) {
+    let help = '';
+    try {
+      const r = spawnSync(exe, ['--help'], { encoding: 'utf8', windowsHide: true });
+      help = (r.stdout || '') + (r.stderr || '');
+    } catch (e) {
+      help = '';
+    }
+    loadModeState.flag = help.includes('--load-mode') ? 'load-mode' : help.includes('--mmap') ? 'mmap' : 'none';
+  }
+  if (loadModeState.flag === 'load-mode') return ['--load-mode', loadMode];
+  if (loadModeState.flag === 'mmap') return ['--mmap', loadMode === 'none' ? '0' : '1'];
+  return [];
+}
+
+// llama-bench를 돌린다. 인자 이름이 안 맞아 곧장 죽으면 적재 옵션을 빼고 한 번 더 돌린다.
+// 빌드마다 옵션 이름이 달라서 도움말을 보고 고른 이름도 틀릴 수 있다.
+async function runBenchExe(exe, buildArgs, onProgress) {
+  let last = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const args = buildArgs();
+    let out = '';
+    let log = `llama-bench ${args.join(' ')}\n`;
+    onProgress(out, log);
+    const code = await new Promise((resolve, reject) => {
+      benchChild = spawn(exe, args, { windowsHide: true });
+      benchChild.stdout.on('data', (d) => {
+        out += d.toString();
+        onProgress(out, log);
+      });
+      benchChild.stderr.on('data', (d) => {
+        log += d.toString();
+        if (log.length > 4000) log = log.slice(-4000);
+        onProgress(out, log);
+      });
+      benchChild.on('error', reject);
+      benchChild.on('exit', resolve);
+    }).finally(() => {
+      benchChild = null;
+    });
+    if (code === 0) return { out, log };
+    last = { code, log };
+    const argProblem = /invalid parameter|unknown argument|unrecognized|invalid argument/i.test(log);
+    if (attempt === 0 && argProblem && loadModeState.flag !== 'none') {
+      loadModeState.flag = 'none';
+      onProgress(out, log + '\n적재 옵션을 이 빌드가 받지 않는다. 빼고 다시 돌린다.\n');
+      continue;
+    }
+    break;
+  }
+  throw new Error(`llama-bench 종료코드 ${last.code}\n${last.log.slice(-800)}`);
+}
+
 async function runTuning(opts, cfg) {
   const modelKey = (opts && opts.model) || 'qwen38';
   const paths = await install.modelPaths(cfg);
@@ -195,7 +253,7 @@ async function runTuning(opts, cfg) {
     server.stop();
   }
 
-  const args = [
+  const buildArgs = () => [
     '-m', target.file,
     '-p', '0', '-n', String(TG), '-r', '2',
     '-t', threads.join(','),
@@ -203,32 +261,17 @@ async function runTuning(opts, cfg) {
     '-C', masks.join(','),
     '-ngl', '99', '-ncmoe', String(target.ncmoe),
     '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0',
+    // 설정의 적재 방식을 그대로 쓴다. none이면 모델을 RAM에 읽어 두고 잰다.
+    ...loadModeArgs(exe, cfg.loadMode),
     '-o', 'jsonl'
   ];
 
   const t0 = Date.now();
-  let out = '';
-  let log = `llama-bench ${args.join(' ')}\n조합 ${total}개: 스레드 ${threads.join('/')} × poll ${polls.join('/')} × 마스크 ${masks.join('/')}\n`;
-  emit({ promptIdx: 0, total, tokens: 0, tokPerSec: 0, text: log });
-
-  const code = await new Promise((resolve, reject) => {
-    benchChild = spawn(exe, args, { windowsHide: true });
-    benchChild.stdout.on('data', (d) => {
-      out += d.toString();
-      emit({ promptIdx: parseJsonl(out).length, total, tokens: 0, tokPerSec: 0, text: log });
-    });
-    benchChild.stderr.on('data', (d) => {
-      log += d.toString();
-      if (log.length > 4000) log = log.slice(-4000);
-      emit({ promptIdx: parseJsonl(out).length, total, tokens: 0, tokPerSec: 0, text: log });
-    });
-    benchChild.on('error', reject);
-    benchChild.on('exit', resolve);
-  }).finally(() => {
-    benchChild = null;
+  const head = `조합 ${total}개: 스레드 ${threads.join('/')} × poll ${polls.join('/')} × 마스크 ${masks.join('/')}\n`;
+  const { out } = await runBenchExe(exe, buildArgs, (o, l) => {
+    emit({ promptIdx: parseJsonl(o).length, total, tokens: 0, tokPerSec: 0, text: l + head });
   });
   const seconds = (Date.now() - t0) / 1000;
-  if (code !== 0) throw new Error(`llama-bench 종료코드 ${code}\n${log.slice(-800)}`);
 
   const rows = parseJsonl(out)
     .filter((r) => r.n_gen === TG)
@@ -329,7 +372,7 @@ async function run(opts, cfg) {
 // 커뮤니티·모델 카드가 쓰는 지표라 다른 PC 결과와 바로 비교할 수 있다.
 // 모델을 직접 로드하므로 RAM 충돌을 피하려고 llama-server는 먼저 내린다.
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const install = require('./install');
 
 const PP = 512;
@@ -364,39 +407,25 @@ async function runStandard(opts, cfg) {
     server.stop();
   }
 
-  const args = [
+  const buildArgs = () => [
     '-m', target.file,
     '-p', String(PP), '-n', String(TG), '-r', String(REPS),
     '-t', String(cfg.threads),
     '-ngl', '99', '-ncmoe', String(target.ncmoe),
     '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0',
     '-b', '2048', '-ub', '512',
+    ...loadModeArgs(exe, cfg.loadMode),
     '-o', 'jsonl'
   ];
 
   const stopSampler = startPowerSampler();
   const t0 = Date.now();
-  let out = '';
-  let log = `llama-bench ${args.join(' ')}\n`;
-  emit({ promptIdx: 0, total: 2, tokens: 0, tokPerSec: 0, text: log });
-
-  const code = await new Promise((resolve, reject) => {
-    benchChild = spawn(exe, args, { windowsHide: true });
-    benchChild.stdout.on('data', (d) => { out += d.toString(); });
-    benchChild.stderr.on('data', (d) => {
-      log += d.toString();
-      if (log.length > 4000) log = log.slice(-4000);
-      emit({ promptIdx: out.includes('"n_gen": 128') ? 1 : 0, total: 2, tokens: 0, tokPerSec: 0, text: log });
-    });
-    benchChild.on('error', reject);
-    benchChild.on('exit', resolve);
-  }).finally(() => {
-    benchChild = null;
+  const { out } = await runBenchExe(exe, buildArgs, (o, l) => {
+    emit({ promptIdx: o.includes('"n_gen": 128') ? 1 : 0, total: 2, tokens: 0, tokPerSec: 0, text: l });
   });
   const powerSamples = stopSampler();
   const avgUtilPct = round(avg(powerSamples.utilPct || []), 1);
   const seconds = (Date.now() - t0) / 1000;
-  if (code !== 0) throw new Error(`llama-bench 종료코드 ${code}\n${log.slice(-800)}`);
 
   const rows = parseJsonl(out);
   const pp = rows.find((r) => r.n_prompt === PP && r.n_gen === 0);
@@ -448,7 +477,7 @@ async function runStandard(opts, cfg) {
 // ---------- 판정 (verdict) ----------
 // 생성 속도 목표는 20 tok/s. MoE 생성 속도는 GPU보다 RAM 대역폭에 묶인다고 보고 계산한다.
 
-const TARGET = 20;
+const TARGET = 24;
 // 양자화를 한 단계 낮췄을 때 기대하는 배율. 파일 크기 비로 잡았다(Q4 111GB, Q3 90GB, IQ3 82GB).
 const QUANT_DOWN_GAIN = { 'UD-Q4_K_XL': 111 / 82, 'UD-Q3_K_XL': 90 / 82, 'UD-IQ3_XXS': 1 };
 // [추정] GPU 정격 전력을 읽을 방법이 없어 고정값으로 본다.
@@ -548,8 +577,14 @@ async function measureModelBytesGB(cfg) {
         bytes += (await fsp.stat(path.join(dir, name))).size;
       }
     }
+    // 3.6은 자동 로드를 켰을 때만 RAM을 같이 쓴다. 꺼 두면 합계에 넣지 않는다.
     const f36 = paths.qwen36 && paths.qwen36.file;
-    if (f36) bytes += (await fsp.stat(f36)).size;
+    if (cfg.autoLoad36 && f36) bytes += (await fsp.stat(f36)).size;
+    // MTP 헤드는 따로 폴더에 있어 위 반복에 안 잡힌다. 켰으면 더한다.
+    if (cfg.mtp && cfg.mtpFile) {
+      const head = path.join(path.dirname(path.dirname(f38 || '')), 'MTP', cfg.mtpFile);
+      bytes += await fsp.stat(head).then((st) => st.size).catch(() => 0);
+    }
   } catch {
     // 설치 전이면 0으로 둔다. 판정은 bottleneck='unknown'이 된다.
   }
@@ -583,4 +618,4 @@ async function exportLast(dir) {
   return { path: file };
 }
 
-module.exports = { run, cancel, exportLast, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };
+module.exports = { loadModeArgs, loadModeState, runBenchExe, run, cancel, exportLast, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };

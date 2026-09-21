@@ -74,7 +74,8 @@
     install: { mount: mountInstall },
     dashboard: { mount: mountDashboard },
     bench: { mount: mountBench },
-    harness: { mount: mountHarness }
+    harness: { mount: mountHarness },
+    share: { mount: mountShare }
   };
 
   var currentTab = null;
@@ -286,6 +287,7 @@
     $('#cfg-mtp').checked = cfg.mtp === true;
     $('#cfg-mtpFile').value = cfg.mtpFile;
     $('#cfg-loadMode').value = cfg.loadMode;
+    syncMtpRow();
     $('#cfg-ncmoe38').value = cfg.ncmoe38;
     $('#cfg-poll').value = cfg.poll;
     $('#cfg-cpuMask').value = cfg.cpuMask || '';
@@ -312,8 +314,9 @@
     });
   });
 
-  $('#config-form').addEventListener('submit', function (ev) {
-    ev.preventDefault();
+  // 폼에 적힌 값을 저장한다. 저장 버튼과 설치 시작 버튼이 같은 경로를 쓴다.
+  // 전에는 설치 시작이 폼을 안 읽어서, 값을 바꾸고 설치만 누르면 이전 설정으로 돌았다.
+  function saveConfigForm() {
     var partial = {
       installDir: $('#cfg-installDir').value.trim(),
       quant: $('#cfg-quant').value,
@@ -328,12 +331,24 @@
       poll: Number($('#cfg-poll').value),
       cpuMask: $('#cfg-cpuMask').value.trim()
     };
-    if (!partial.installDir) {
-      setText('#config-msg', '설치 경로를 입력해야 한다.');
-      return;
-    }
-    window.api.config.set(partial).then(function (cfg) {
+    if (!partial.installDir) return Promise.reject(new Error('설치 경로를 입력해야 한다.'));
+    return window.api.config.set(partial).then(function (cfg) {
       fillConfigForm(cfg);
+      return cfg;
+    });
+  }
+
+  // MTP를 끄면 헤드 파일 선택은 쓸 데가 없으니 감춘다.
+  function syncMtpRow() {
+    var on = $('#cfg-mtp').checked;
+    $('#cfg-mtpFile-label').hidden = !on;
+    $('#cfg-mtpFile').hidden = !on;
+  }
+  $('#cfg-mtp').addEventListener('change', syncMtpRow);
+
+  $('#config-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    saveConfigForm().then(function () {
       setText('#config-msg', '설정을 저장했다.');
     }).catch(function (err) {
       setText('#config-msg', '저장 실패: ' + (err && err.message ? err.message : String(err)));
@@ -418,12 +433,17 @@
     setText('#install-msg', '');
     $('#install-confirm').hidden = true;
 
-    window.api.install.start(allowWarn ? { allowWarn: true } : {}).then(function (res) {
+    // 화면에 적힌 값을 먼저 저장하고 그 설정으로 설치한다.
+    saveConfigForm().then(function () {
+      return window.api.install.start(allowWarn ? { allowWarn: true } : {});
+    }).then(function (res) {
       if (res && res.started) return;
 
       setText('#install-msg', (res && res.reason) ? res.reason : '설치를 시작하지 못했다.');
       // 주의 항목만 걸린 경우에는 사용자가 그대로 진행할 수 있게 확인을 띄운다.
       if (!allowWarn && hasWarnOnly()) $('#install-confirm').hidden = false;
+    }).catch(function (err) {
+      setText('#install-msg', '설정을 저장하지 못해 설치를 시작하지 않았다: ' + (err && err.message ? err.message : String(err)));
     });
   }
 
@@ -913,7 +933,14 @@
 
     window.api.bench.run({ model: model, mode: mode }).then(function (result) {
       renderBenchResult(result);
-      setText('#bench-msg', '벤치가 끝났다.');
+      if (result.savedTo) {
+        state.exportPath = result.savedTo;
+        setText('#bench-export-path', result.savedTo);
+        $('#bench-open').hidden = false;
+        setText('#bench-msg', '벤치가 끝났다. 결과를 저장했다.');
+      } else {
+        setText('#bench-msg', '벤치가 끝났다.' + (result.saveError ? ' 저장 실패: ' + result.saveError : ''));
+      }
     }).catch(function (err) {
       setText('#bench-msg', '벤치를 끝내지 못했다: ' + (err && err.message ? err.message : String(err)));
     }).then(function () {
@@ -938,6 +965,329 @@
     }).catch(function (err) {
       setText('#tuning-apply-msg', '저장 실패: ' + (err && err.message ? err.message : String(err)));
     });
+  });
+
+// 앱 안 터미널. 하네스를 띄우면 여기에 붙는다.
+  var term = { xterm: null, fit: null, id: null, unsub: null };
+
+  function termOpen(id, title) {
+    if (!window.Terminal) {
+      setText('#harness-msg', '터미널 모듈을 불러오지 못했다. 새 포터블 zip을 받아야 한다.');
+      return;
+    }
+    $('#term-card').hidden = false;
+    setText('#term-title', title);
+    term.id = id;
+
+    if (!term.xterm) {
+      term.xterm = new window.Terminal({
+        fontSize: 13,
+        // 한글이 반칸으로 어긋나지 않게 고정폭 한글 폰트를 먼저 찾는다.
+        fontFamily: '"D2Coding", "NanumGothicCoding", Consolas, monospace',
+        cursorBlink: true,
+        scrollback: 5000,
+        theme: { background: '#0f1115', foreground: '#d7dae0' }
+      });
+      if (window.FitAddon && window.FitAddon.FitAddon) {
+        term.fit = new window.FitAddon.FitAddon();
+        term.xterm.loadAddon(term.fit);
+      }
+      term.xterm.open($('#term-host'));
+      term.xterm.onData(function (d) {
+        if (term.id) window.api.term.write(term.id, d);
+      });
+      window.addEventListener('resize', termFit);
+    }
+
+    if (!term.unsub) {
+      term.unsub = window.api.on('term:event', function (e) {
+        if (!term.xterm || e.id !== term.id) return;
+        if (e.type === 'data') term.xterm.write(e.data);
+        if (e.type === 'exit') term.xterm.write('\r\n[세션이 끝났다. 종료 코드 ' + e.exitCode + ']\r\n');
+      });
+    }
+
+    // 이미 돌고 있던 세션이면 지금까지 출력을 다시 그린다.
+    window.api.term.snapshot(id).then(function (snap) {
+      term.xterm.reset();
+      if (snap && snap.buf) term.xterm.write(snap.buf);
+      termFit();
+      term.xterm.focus();
+    });
+  }
+
+  function termFit() {
+    if (!term.fit || !term.xterm || $('#term-card').hidden) return;
+    try {
+      term.fit.fit();
+      if (term.id) window.api.term.resize(term.id, term.xterm.cols, term.xterm.rows);
+    } catch (e) {
+      // 화면이 안 보일 때는 크기를 못 재는데, 그냥 둔다.
+    }
+  }
+
+  $('#term-kill').addEventListener('click', function () {
+    if (!term.id) return;
+    window.api.term.kill(term.id);
+  });
+
+// 공유 화면. WireGuard 상태와 기기 목록을 보여준다.
+  var share = { info: null };
+
+  function kvFill(sel, pairs) {
+    var el = $(sel);
+    el.textContent = '';
+    pairs.forEach(function (pair) {
+      var dt = document.createElement('dt');
+      dt.textContent = pair[0];
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      el.appendChild(dt);
+      el.appendChild(dd);
+    });
+  }
+
+  // 키는 화면에 그대로 두지 않는다. 화면을 찍거나 공유할 때 같이 나간다.
+  var shareKeyShown = false;
+
+  function maskKey(k) {
+    if (!k) return '터널을 한 번 시작하면 생긴다';
+    return shareKeyShown ? k : k.slice(0, 4) + '·'.repeat(Math.max(0, k.length - 4));
+  }
+
+  function shareRender(info) {
+    share.info = info;
+    var st = info.status || { running: false, peers: [] };
+    kvFill('#share-kv', [
+      ['WireGuard', info.installed ? (info.version || '설치됨') : '설치 안 됨'],
+      ['터널', st.running ? '돌고 있음' : '내려가 있음'],
+      ['이 PC 주소', info.address + ' (포트 ' + info.port + ')'],
+      ['접속 주소', info.endpoint || '아직 없음'],
+      ['API 키', maskKey(info.apiKey)],
+      ['등록된 기기', String(info.peers.length)],
+      ['서버 바인드', info.listen
+        ? (info.listen.addresses.length
+            ? info.listen.addresses.join(', ') + (info.listen.open ? ' (터널에서 닿는다)' : ' (이 PC 안에서만)')
+            : '포트 ' + info.listen.port + '을 듣는 것이 없다')
+        : '확인 못 함'],
+      ['차단 규칙', info.blocked && info.blocked.length
+        ? info.blocked.length + '개가 llama-server를 막고 있다 (' +
+          info.blocked.map(function (b) { return b.profile; }).join(', ') + ')'
+        : '없음'],
+      ['방화벽', info.firewall
+        ? (info.firewall.udp ? '터널 포트 열림' : '터널 포트 없음') + ', ' +
+          (info.firewall.tcp ? '서버 포트 열림' : '서버 포트 없음')
+        : '모름']
+    ]);
+    $('#share-endpoint').value = info.endpoint || '';
+    $('#share-serve').checked = !!info.serve;
+
+    var live = {};
+    st.peers.forEach(function (p) { live[p.publicKey] = p; });
+
+    var body = $('#share-peer-rows');
+    body.textContent = '';
+    if (!info.peers.length) {
+      var tr0 = document.createElement('tr');
+      var td0 = document.createElement('td');
+      td0.colSpan = 4;
+      td0.textContent = '아직 없다';
+      tr0.appendChild(td0);
+      body.appendChild(tr0);
+    }
+    info.peers.forEach(function (p) {
+      var l = live[p.publicKey];
+      var tr = document.createElement('tr');
+      // 터널에 아직 안 올라간 기기와, 올라갔지만 아직 안 붙은 기기를 구분해 적는다.
+      var when = !l ? '터널 시작을 다시 눌러야 반영된다'
+        : l.lastHandshake ? new Date(l.lastHandshake).toLocaleString()
+        : '아직 붙지 않음';
+      [p.name, p.address, when].forEach(function (t) {
+        var td = document.createElement('td');
+        td.textContent = t;
+        tr.appendChild(td);
+      });
+      var td = document.createElement('td');
+      var show = document.createElement('button');
+      show.type = 'button';
+      show.className = 'btn btn-sm';
+      show.textContent = '보기';
+      show.addEventListener('click', function () { shareShowConf(p.name); });
+      var inv = document.createElement('button');
+      inv.type = 'button';
+      inv.className = 'btn btn-sm';
+      inv.textContent = '초대 코드';
+      inv.addEventListener('click', function () {
+        window.api.wg.invite(p.name).then(function (code) {
+          $('#share-conf-box').hidden = false;
+          $('#share-conf').textContent = code;
+          $('#share-conf-save').setAttribute('data-peer', p.name);
+          setText('#share-msg', '초대 코드를 만들었다. 클라이언트 첫 화면에 붙여넣는다.');
+          navigator.clipboard.writeText(code).catch(function () {});
+        }).catch(function (err) {
+          setText('#share-msg', '초대 코드를 만들지 못했다: ' + errText(err));
+        });
+      });
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-sm';
+      del.textContent = '삭제';
+      del.addEventListener('click', function () {
+        if (!confirm(p.name + ' 기기를 지운다. 그 기기는 더 못 붙는다. 진행할까?')) return;
+        window.api.wg.removePeer(p.name).then(shareLoad);
+      });
+      td.appendChild(show);
+      td.appendChild(inv);
+      td.appendChild(del);
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+
+    var base = 'http://' + info.address + ':8080';
+    kvFill('#share-howto', [
+      ['기본 주소', base + '/v1'],
+      ['인증 헤더', 'Authorization: Bearer ' + maskKey(info.apiKey)],
+      ['모델 이름', 'qwen38 또는 qwen36'],
+      ['확인', base + '/health']
+    ]);
+  }
+
+  function mountShare() {
+    shareLoad();
+  }
+
+  $('#share-key-show').addEventListener('click', function () {
+    shareKeyShown = !shareKeyShown;
+    $('#share-key-show').textContent = shareKeyShown ? 'API 키 가리기' : 'API 키 보기';
+    if (share.info) shareRender(share.info);
+  });
+
+  $('#share-key-copy').addEventListener('click', function () {
+    if (!share.info || !share.info.apiKey) return;
+    navigator.clipboard.writeText(share.info.apiKey).then(function () {
+      setText('#share-msg', 'API 키를 클립보드에 복사했다.');
+    });
+  });
+
+  $('#share-key-new').addEventListener('click', function () {
+    if (!confirm('API 키를 새로 만든다. 지금 키를 쓰는 기기는 서버를 다시 시작한 뒤 새 키로 바꿔야 한다. 진행할까?')) return;
+    window.api.wg.rotateApiKey().then(function () {
+      setText('#share-msg', '새 키를 만들었다. 대시보드에서 서버를 다시 시작해야 바뀐 키가 걸린다.');
+      return shareLoad();
+    }).catch(function (err) {
+      setText('#share-msg', '만들지 못했다: ' + errText(err));
+    });
+  });
+
+  function shareLoad() {
+    return window.api.wg.info().then(shareRender).catch(function (err) {
+      setText('#share-msg', '상태를 읽지 못했다: ' + errText(err));
+    });
+  }
+
+  function shareShowConf(name) {
+    window.api.wg.peerConf(name).then(function (text) {
+      $('#share-conf-box').hidden = false;
+      $('#share-conf').textContent = text;
+      $('#share-conf-save').setAttribute('data-peer', name);
+    }).catch(function (err) {
+      setText('#share-msg', '설정을 만들지 못했다: ' + errText(err));
+    });
+  }
+
+  // 체크하면 바로 저장한다. 서버를 다시 시작할 때 이 값을 본다.
+  $('#share-serve').addEventListener('change', function () {
+    var on = $('#share-serve').checked;
+    window.api.wg.setServe(on).then(function () {
+      setText('#share-msg', on
+        ? '터널에 열기로 저장했다. 대시보드에서 서버를 다시 시작해야 반영된다.'
+        : '터널에 열지 않기로 저장했다. 대시보드에서 서버를 다시 시작한다.');
+    }).catch(function (err) {
+      setText('#share-msg', '저장하지 못했다: ' + errText(err));
+    });
+  });
+
+  // 차단 규칙은 허용 규칙보다 먼저 적용된다. 포트를 열어도 이게 있으면 못 닿는다.
+  $('#share-unblock').addEventListener('click', function () {
+    setText('#share-msg', '차단 규칙을 끄는 중.');
+    window.api.wg.unblock().then(function (r) {
+      setText('#share-msg', r.ok
+        ? 'llama-server를 막던 차단 규칙을 껐다. 클라이언트에서 다시 붙어 본다.'
+        : '아직 ' + r.left.length + '개가 남아 있다. 관리자 권한으로 앱을 다시 켠다.');
+      shareLoad();
+    }).catch(function (err) {
+      setText('#share-msg', '끄지 못했다: ' + errText(err));
+    });
+  });
+
+  $('#share-refresh').addEventListener('click', shareLoad);
+
+  $('#share-up').addEventListener('click', function () {
+    setText('#share-msg', '터널을 올리는 중');
+    window.api.wg.up().then(function () {
+      setText('#share-msg', '터널을 올렸다.');
+      return shareLoad();
+    }).catch(function (err) {
+      setText('#share-msg', '올리지 못했다: ' + errText(err));
+    });
+  });
+
+  $('#share-down').addEventListener('click', function () {
+    window.api.wg.down().then(function () {
+      setText('#share-msg', '터널을 내렸다.');
+      return shareLoad();
+    }).catch(function (err) {
+      setText('#share-msg', '내리지 못했다: ' + errText(err));
+    });
+  });
+
+  $('#share-lan').addEventListener('click', function () {
+    window.api.wg.localIps().then(function (list) {
+      if (!list.length) { setText('#share-msg', '내부 IP를 찾지 못했다.'); return; }
+      $('#share-endpoint').value = list[0].address;
+      var others = list.slice(1).map(function (i) { return i.address + '(' + i.name + ')'; });
+      setText('#share-msg', '내부 IP ' + list[0].address + '을 넣었다. 저장을 누른다.' +
+        (others.length ? ' 다른 후보: ' + others.join(', ') : ''));
+    });
+  });
+
+  $('#share-ip').addEventListener('click', function () {
+    setText('#share-msg', '공인 IP를 알아보는 중');
+    window.api.wg.publicIp().then(function (ip) {
+      if (!ip) { setText('#share-msg', '공인 IP를 알아내지 못했다.'); return; }
+      $('#share-endpoint').value = ip;
+      setText('#share-msg', '공인 IP ' + ip + '. 저장을 눌러야 설정에 들어간다.');
+    });
+  });
+
+  $('#share-endpoint-save').addEventListener('click', function () {
+    window.api.wg.setEndpoint($('#share-endpoint').value).then(function () {
+      setText('#share-msg', '접속 주소를 저장했다.');
+      return shareLoad();
+    });
+  });
+
+  $('#share-peer-add').addEventListener('click', function () {
+    var n = $('#share-peer-name').value.trim();
+    if (!n) { setText('#share-msg', '기기 이름을 적는다.'); return; }
+    window.api.wg.addPeer(n).then(function (peer) {
+      $('#share-peer-name').value = '';
+      setText('#share-msg', peer.name + ' 추가했다. 터널을 다시 시작해야 붙는다.');
+      return shareLoad().then(function () { shareShowConf(peer.name); });
+    }).catch(function (err) {
+      setText('#share-msg', '추가하지 못했다: ' + errText(err));
+    });
+  });
+
+  $('#share-conf-save').addEventListener('click', function () {
+    var n = $('#share-conf-save').getAttribute('data-peer');
+    window.api.wg.savePeerConf(n).then(function (r) {
+      setText('#share-msg', r.saved ? '저장했다: ' + r.path : '저장하지 않았다.');
+    });
+  });
+
+  $('#share-conf-close').addEventListener('click', function () {
+    $('#share-conf-box').hidden = true;
   });
 
   $('#bench-export').addEventListener('click', function () {
@@ -1031,11 +1381,14 @@
           btn.disabled = true;
           setText('#harness-msg', h.name + ' 터미널을 여는 중이다.');
           window.api.harness.launch(h.id, harnessOptions()).then(function (res) {
-            setText('#harness-msg', res && res.ok
-              ? h.name + ' 터미널 창을 열었다.'
-              : (res && res.error) || '터미널 창을 열지 못했다.');
+            if (res && res.ok) {
+              setText('#harness-msg', h.name + ' 터미널을 열었다.');
+              termOpen(res.term || h.id, h.name);
+            } else {
+              setText('#harness-msg', (res && res.error) || '터미널을 열지 못했다.');
+            }
           }).catch(function (err) {
-            setText('#harness-msg', '터미널 창을 열지 못했다: ' + errText(err));
+            setText('#harness-msg', '터미널을 열지 못했다: ' + errText(err));
           }).then(function () { btn.disabled = false; });
         });
       } else {
@@ -1086,31 +1439,40 @@
       setText('#version-badge', 'v' + v);
     });
 
-    // 업데이트. 시작할 때 한 번 확인하고 새 버전이 있으면 버튼을 보인다.
+    // 업데이트. 시작할 때 한 번 보고, 그 뒤로 30분마다 다시 본다.
+    // 앱을 오래 켜 두는 쪽이라 껐다 켜야만 알게 두면 새 버전을 한참 모른다.
     var updateBtn = $('#update-btn');
     window.api.on('update:progress', function (p) {
       updateBtn.disabled = p.stage !== 'error';
       updateBtn.textContent = p.stage === 'download' ? '업데이트 ' + p.percent + '%' : p.text;
       if (p.stage === 'error') updateBtn.title = p.text;
     });
-    window.api.update.check().then(function (u) {
-      if (!u.available) return;
-      updateBtn.hidden = false;
-      updateBtn.textContent = '새 버전 v' + u.latest + ' 업데이트';
-      updateBtn.title = u.notes || '';
-      updateBtn.addEventListener('click', function () {
-        if (!confirm('v' + u.latest + '로 업데이트한다. 앱이 잠시 닫혔다가 다시 뜬다. 진행 중인 설치나 벤치는 끊긴다.')) return;
-        updateBtn.disabled = true;
-        updateBtn.textContent = '업데이트 준비 중';
-        window.api.update.apply().then(function (r) {
-          if (!r.ok) {
-            updateBtn.disabled = false;
-            updateBtn.textContent = '업데이트 실패, 다시 시도';
-            updateBtn.title = r.error || '';
-          }
+    var updateWired = false;
+    function lookForUpdate() {
+      window.api.update.check().then(function (u) {
+        if (!u || !u.available || updateWired) return;
+        updateWired = true;
+        updateBtn.hidden = false;
+        updateBtn.textContent = '새 버전 v' + u.latest + ' 업데이트';
+        updateBtn.title = u.notes || '';
+        updateBtn.addEventListener('click', function () {
+          if (!confirm('v' + u.latest + '로 업데이트한다. 앱이 잠시 닫혔다가 다시 뜬다. 진행 중인 설치나 벤치는 끊긴다.')) return;
+          updateBtn.disabled = true;
+          updateBtn.textContent = '업데이트 준비 중';
+          window.api.update.apply().then(function (r) {
+            if (!r.ok) {
+              updateBtn.disabled = false;
+              updateBtn.textContent = '업데이트 실패, 다시 시도';
+              updateBtn.title = r.error || '';
+            }
+          });
         });
+      }).catch(function () {
+        // 확인에 실패해도 다음 회차에 다시 본다
       });
-    });
+    }
+    lookForUpdate();
+    setInterval(lookForUpdate, 30 * 60 * 1000);
 
     window.api.app.isAdmin().then(function (isAdmin) {
       var el = $('#admin-badge');

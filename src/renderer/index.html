@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>llmbench</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,6 +16,7 @@
       <button type="button" class="tab" role="tab" id="tab-dashboard" data-tab="dashboard" aria-selected="false" aria-controls="panel-dashboard">대시보드</button>
       <button type="button" class="tab" role="tab" id="tab-bench" data-tab="bench" aria-selected="false" aria-controls="panel-bench">벤치마크</button>
       <button type="button" class="tab" role="tab" id="tab-harness" data-tab="harness" aria-selected="false" aria-controls="panel-harness">하네스</button>
+      <button type="button" class="tab" role="tab" id="tab-share" data-tab="share" aria-selected="false" aria-controls="panel-share">공유</button>
     </nav>
     <div class="topbar-status">
       <span id="version-badge" class="badge" title="현재 버전"></span>
@@ -66,68 +68,70 @@
       <div class="card">
         <h2>설정</h2>
         <form class="form" id="config-form">
+          <h3 class="form-group">모델</h3>
+
           <label for="cfg-installDir">설치 경로</label>
           <input type="text" id="cfg-installDir" name="installDir" spellcheck="false">
 
           <label for="cfg-quant">양자화</label>
-          <select id="cfg-quant" name="quant">
-            <option value="UD-Q4_K_XL">UD-Q4_K_XL (104GB, 품질 기준)</option>
-            <option value="UD-Q3_K_XL">UD-Q3_K_XL (90GB)</option>
-            <option value="UD-IQ3_XXS">UD-IQ3_XXS (82GB)</option>
-            <option value="UD-Q2_K_XL">UD-Q2_K_XL (79GB, 속도 실험용)</option>
-            <option value="UD-IQ1_M">UD-IQ1_M (75GB, 품질 크게 떨어짐)</option>
+          <select id="cfg-quant" name="quant" title="바꾸면 3.8 모델을 새로 받는다. 이전 파일은 models\qwen38 아래에 남는다.">
+            <option value="UD-Q4_K_XL">UD-Q4_K_XL · 104GB</option>
+            <option value="UD-Q3_K_XL">UD-Q3_K_XL · 90GB</option>
+            <option value="UD-IQ3_XXS">UD-IQ3_XXS · 82GB</option>
+            <option value="UD-Q2_K_XL">UD-Q2_K_XL · 79GB</option>
+            <option value="UD-IQ1_M">UD-IQ1_M · 75GB</option>
           </select>
-          <span class="hint">양자화를 바꾸면 3.8 모델을 새로 받는다. 이전 양자화 파일은 models\qwen38 아래 폴더로 남으니 필요 없으면 직접 지운다.</span>
-
-          <label for="cfg-ncmoe38">3.8 CPU 전문가 층 수</label>
-          <input type="number" id="cfg-ncmoe38" name="ncmoe38" min="0" max="99" step="1">
-          <span class="hint">앞에서부터 이 층 수만큼 전문가를 CPU RAM에 둔다. Qwen3.8은 48층이라 48 이상이면 전부 CPU. 47, 46처럼 낮추면 뒷층 전문가가 VRAM으로 올라가는데 한 층에 1~1.4GB라 3080 10GB에선 1~2층이 한계다. 층당 이득은 2% 안팎이다. VRAM이 넘치면 서버가 뜨지 않는다. 바꾼 뒤 설치를 다시 실행해야 반영된다.</span>
-
-          <label for="cfg-poll">poll</label>
-          <input type="number" id="cfg-poll" name="poll" min="0" max="100" step="1">
-          <span class="hint">스레드가 일감을 기다릴 때 바쁘게 도는 비율. 기본 50. 벤치마크 탭의 튜닝 모드가 좋은 값을 찾아 준다.</span>
-
-          <label for="cfg-cpuMask">CPU 마스크</label>
-          <input type="text" id="cfg-cpuMask" name="cpuMask" spellcheck="false" placeholder="비우면 안 씀. 예: 0xFFFF">
-          <span class="hint">llama-server --cpu-mask. 하이브리드 CPU에서 P코어만 쓰게 할 때 넣는다. 튜닝 모드 결과를 적용하면 자동으로 채워진다.</span>
-
-          <label for="cfg-mtp">MTP 드래프트</label>
-          <span><input type="checkbox" id="cfg-mtp" name="mtp"> 3.8의 내장 MTP 헤드로 초안을 뽑아 생성을 빠르게 한다. 켜면 llama.cpp를 unsloth 빌드로 바꿔 받고(약 340MB) MTP 파일(2.6GB)을 추가로 받는다. VRAM을 2.6GB 더 쓴다. 효과는 체감 벤치로 잰다(llama-bench는 드래프트 미지원).</span>
-
-          <label for="cfg-mtpFile">MTP 파일</label>
-          <select id="cfg-mtpFile" name="mtpFile">
-            <option value="mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf">Q4_K_M (2.8GB, 자체 임베딩)</option>
-            <option value="mtp-Qwen3.8-Flash-Next-Q8_0.gguf">Q8_0 (4.1GB, 자체 임베딩)</option>
-            <option value="mtp-Qwen3.8-Flash-Next-BF16.gguf">BF16 (7.8GB, 자체 임베딩)</option>
-            <option value="mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf">shared-Q4_K_M (1.9GB)</option>
-            <option value="mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf">shared-Q8_0 (2.8GB)</option>
-            <option value="mtp-Qwen3.8-Flash-Next-shared-BF16.gguf">shared-BF16 (5.2GB)</option>
-          </select>
-          <span class="hint">shared는 본체 모델의 임베딩을 빌려 쓴다. 본체 양자화가 IQ3처럼 다르면 텐서 형상이 안 맞아 서버가 죽는다. 그 경우 자체 임베딩을 가진 쪽을 쓴다.</span>
-
-          <label for="cfg-loadMode">모델 적재 방식</label>
-          <select id="cfg-loadMode" name="loadMode">
-            <option value="mmap">mmap (파일을 걸어 두고 필요할 때 읽는다)</option>
-            <option value="none">none (전부 RAM으로 읽어 둔다)</option>
-          </select>
-          <span class="hint">전문가를 CPU에 두면 llama.cpp가 none을 권한다. 모델이 RAM에 들어갈 때만 none이 낫다. 모자라면 시작이 느려지거나 실패한다.</span>
-
-          <label for="cfg-autoLoad36">3.6 자동 로드</label>
-          <span><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36"> 서버 시작 시 Qwen3.6도 같이 올린다. RAM이 두 모델 합계(Q4 기준 125GB)보다 작으면 끈다. 바꾼 뒤 설치를 다시 실행해야 models.ini에 반영된다.</span>
-
-          <label for="cfg-threads">스레드</label>
-          <input type="number" id="cfg-threads" name="threads" min="1" max="256" step="1">
 
           <label for="cfg-ctx">컨텍스트 길이</label>
           <input type="number" id="cfg-ctx" name="ctx" min="2048" max="1048576" step="1024">
 
-          <label for="cfg-kwhPrice">전기요금 (원/kWh)</label>
-          <input type="number" id="cfg-kwhPrice" name="kwhPrice" min="0" step="1">
+          <label for="cfg-autoLoad36">3.6 같이 올리기</label>
+          <span class="form-check"><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36" title="서버 시작 때 Qwen3.6도 올린다. RAM이 두 모델 합계보다 작으면 끈다."></span>
+
+          <h3 class="form-group">실행</h3>
+
+          <label for="cfg-threads">스레드</label>
+          <input type="number" id="cfg-threads" name="threads" min="1" max="256" step="1">
+
+          <label for="cfg-ncmoe38">CPU 전문가 층</label>
+          <input type="number" id="cfg-ncmoe38" name="ncmoe38" min="0" max="99" step="1" title="앞에서부터 이 층 수만큼 전문가를 CPU에 둔다. 3.8은 48층이라 48 이상이면 전부 CPU. 낮추면 VRAM을 쓴다.">
+
+          <label for="cfg-poll">poll</label>
+          <input type="number" id="cfg-poll" name="poll" min="0" max="100" step="1" title="스레드가 일감을 기다릴 때 바쁘게 도는 비율. 튜닝 모드가 값을 찾아 준다.">
+
+          <label for="cfg-cpuMask">CPU 마스크</label>
+          <input type="text" id="cfg-cpuMask" name="cpuMask" spellcheck="false" placeholder="예: 0xFFFF" title="llama-server --cpu-mask. 비우면 안 쓴다. 튜닝 모드 결과를 적용하면 채워진다.">
+
+          <label for="cfg-loadMode">적재 방식</label>
+          <select id="cfg-loadMode" name="loadMode" title="모델이 RAM에 들어가면 none이 빠르다. 모자라면 시작이 느려지거나 실패한다.">
+            <option value="mmap">mmap · 필요할 때 읽음</option>
+            <option value="none">none · 전부 RAM에 올림</option>
+          </select>
+
+          <h3 class="form-group">MTP 드래프트</h3>
+
+          <label for="cfg-mtp">사용</label>
+          <span class="form-check"><input type="checkbox" id="cfg-mtp" name="mtp" title="켜면 llama.cpp를 unsloth 빌드로 바꿔 받고 MTP 헤드를 추가로 받는다. 효과는 체감 벤치로만 잰다."></span>
+
+          <label for="cfg-mtpFile" id="cfg-mtpFile-label">헤드 파일</label>
+          <select id="cfg-mtpFile" name="mtpFile" title="shared는 본체 임베딩을 빌려 쓴다. 시작할 때 borrow_shared_tensor 오류 한 줄은 정상이다.">
+            <option value="mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf">shared-Q8_0 · 2.6GB</option>
+            <option value="mtp-Qwen3.8-Flash-Next-shared-Q4_K_M.gguf">shared-Q4_K_M · 1.9GB</option>
+            <option value="mtp-Qwen3.8-Flash-Next-shared-BF16.gguf">shared-BF16 · 5.2GB</option>
+            <option value="mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf">Q4_K_M · 2.8GB</option>
+            <option value="mtp-Qwen3.8-Flash-Next-Q8_0.gguf">Q8_0 · 4.1GB</option>
+            <option value="mtp-Qwen3.8-Flash-Next-BF16.gguf">BF16 · 7.8GB</option>
+          </select>
+
+          <h3 class="form-group">기타</h3>
+
+          <label for="cfg-kwhPrice">전기요금</label>
+          <input type="number" id="cfg-kwhPrice" name="kwhPrice" min="0" step="1" title="원/kWh">
 
           <div class="form-actions">
             <button type="submit" class="btn">설정 저장</button>
-            <button type="button" class="btn" id="config-export">파일로 내보내기</button>
-            <button type="button" class="btn" id="config-import">파일에서 가져오기</button>
+            <button type="button" class="btn" id="config-export">내보내기</button>
+            <button type="button" class="btn" id="config-import">가져오기</button>
             <span class="hint" id="config-msg" aria-live="polite"></span>
           </div>
         </form>
@@ -296,7 +300,7 @@
     </section>
     <!-- ⑤ 하네스: 코딩 에이전트 CLI를 외부 터미널로 띄운다 -->
     <section class="panel" id="panel-harness" role="tabpanel" aria-labelledby="tab-harness" hidden>
-      <p class="hint">코딩 에이전트 CLI를 새 터미널 창으로 연다. llama-server가 준비돼 있어야 한다.</p>
+      <p class="hint">코딩 에이전트 CLI를 아래 터미널에서 연다. llama-server가 준비돼 있어야 한다.</p>
 
       <table class="grid" id="harness-table">
         <caption class="sr-only">하네스 목록</caption>
@@ -317,14 +321,89 @@
       </div>
       <p class="hint" id="harness-msg" aria-live="polite"></p>
 
+      <div class="card" id="term-card" hidden>
+        <h2>터미널</h2>
+        <div class="row">
+          <span class="hint" id="term-title"></span>
+          <button type="button" class="btn btn-sm" id="term-kill">종료</button>
+        </div>
+        <div id="term-host"></div>
+      </div>
+
       <div class="card">
         <h2>설치 로그</h2>
         <pre class="log" id="harness-log" tabindex="0" aria-label="하네스 설치 로그"></pre>
       </div>
     </section>
 
+
+    <!-- ⑥ 공유 -->
+    <section class="panel" id="panel-share" role="tabpanel" aria-labelledby="tab-share" hidden>
+      <p class="hint">WireGuard 터널을 만들어 다른 기기에서 이 PC의 llama-server를 쓴다. 터널 대역 밖에서는 닿지 않고, 그 안에서도 API 키가 있어야 한다.</p>
+
+      <div class="card">
+        <h2>상태</h2>
+        <dl class="kv" id="share-kv"></dl>
+        <div class="row">
+          <button type="button" class="btn btn-sm" id="share-key-show">API 키 보기</button>
+          <button type="button" class="btn btn-sm" id="share-key-copy">키 복사</button>
+          <button type="button" class="btn btn-sm" id="share-key-new">키 새로 만들기</button>
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="share-up">터널 시작</button>
+          <button type="button" class="btn" id="share-down">터널 중지</button>
+          <button type="button" class="btn" id="share-unblock">차단 규칙 끄기</button>
+          <button type="button" class="btn" id="share-refresh">새로 읽기</button>
+          <span class="hint" id="share-msg" aria-live="polite"></span>
+        </div>
+        <div class="row">
+          <label for="share-endpoint">접속 주소</label>
+          <input type="text" id="share-endpoint" placeholder="공인 IP 또는 도메인" spellcheck="false">
+          <button type="button" class="btn" id="share-lan">내부 IP 넣기</button>
+          <button type="button" class="btn" id="share-ip">공인 IP 넣기</button>
+          <button type="button" class="btn" id="share-endpoint-save">저장</button>
+        </div>
+        <p class="hint">같은 공유기 안에서 쓸 거면 내부 IP를 넣는다. 밖에서 붙으려면 공인 IP를 넣고 공유기에서 UDP 51820을 이 PC로 넘겨야 한다. 같은 공유기 안인데 공인 IP를 넣으면 대개 안 붙는다.</p>
+        <div class="row">
+          <label for="share-serve">서버를 터널에 열기</label>
+          <span class="form-check"><input type="checkbox" id="share-serve"></span>
+        </div>
+        <p class="hint">켠 뒤 대시보드에서 서버를 다시 시작해야 반영된다. 끄면 이 PC 안에서만 쓸 수 있다.</p>
+      </div>
+
+      <div class="card">
+        <h2>기기</h2>
+        <div class="row">
+          <input type="text" id="share-peer-name" placeholder="기기 이름 (예: 노트북)" spellcheck="false">
+          <button type="button" class="btn" id="share-peer-add">추가</button>
+        </div>
+        <table class="grid" id="share-peers">
+          <caption class="sr-only">등록된 기기</caption>
+          <thead>
+            <tr><th scope="col">이름</th><th scope="col">터널 주소</th><th scope="col">마지막 연결</th><th scope="col">설정</th></tr>
+          </thead>
+          <tbody id="share-peer-rows"></tbody>
+        </table>
+        <div id="share-conf-box" hidden>
+          <p class="hint">아래 내용을 기기의 WireGuard에 넣는다. 개인 키가 들어 있으니 다른 데로 보내지 않는다.</p>
+          <pre class="log" id="share-conf" tabindex="0" aria-label="클라이언트 설정"></pre>
+          <div class="row">
+            <button type="button" class="btn" id="share-conf-save">파일로 저장</button>
+            <button type="button" class="btn" id="share-conf-close">닫기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>기기에서 쓰는 법</h2>
+        <dl class="kv" id="share-howto"></dl>
+      </div>
+    </section>
+
   </main>
 
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
   <script src="app.js"></script>
   <script>
     // window.api(preload)가 없으면 개발 검증용 목 API를 대신 로드한다.
