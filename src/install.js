@@ -674,7 +674,8 @@ async function stepPreset(cfg) {
     'jinja = true',
     'load-mode = mmap',
     `poll = ${cfg.poll}`,
-    ...(cfg.cpuMask ? [`cpu-mask = ${cfg.cpuMask}`, 'cpu-strict = true'] : []),
+    // cpu-strict는 0 또는 1만 받는다. true로 쓰면 인자 파싱에서 죽는다.
+    ...(cfg.cpuMask ? [`cpu-mask = ${cfg.cpuMask}`, 'cpu-strict = 1'] : []),
     'temp = 1.0',
     'top-p = 0.95',
     'top-k = 20',
