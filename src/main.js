@@ -367,6 +367,11 @@ function registerIpc() {
   ipcMain.handle('shell:openPath', (_e, p) => shell.openPath(p));
   ipcMain.handle('app:isAdmin', () => sys.isAdmin());
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:copy', (_e, text) => {
+    clipboard.writeText(String(text || ''));
+    return { ok: true };
+  });
+  ipcMain.handle('app:paste', () => clipboard.readText());
 
   install.onProgress((s) => broadcast('install:progress', s));
   server.onStatus((s) => broadcast('server:status', s));

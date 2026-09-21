@@ -996,6 +996,9 @@
       term.xterm.onData(function (d) {
         if (term.id) window.api.term.write(term.id, d);
       });
+      wireTermKeys(term.xterm, $('#term-host'), function (d) {
+        if (term.id) window.api.term.write(term.id, d);
+      });
       window.addEventListener('resize', termFit);
     }
 
@@ -1013,6 +1016,55 @@
       if (snap && snap.buf) term.xterm.write(snap.buf);
       termFit();
       term.xterm.focus();
+    });
+  }
+
+  // 터미널 키 처리. xterm은 기본으로 복사, 붙여넣기, 줄바꿈을 다 안 해 준다.
+  function wireTermKeys(xterm, host, sendText) {
+    function paste() {
+      window.api.app.paste().then(function (text) {
+        if (text) xterm.paste(text);
+      });
+    }
+    function copySelection() {
+      var sel = xterm.getSelection();
+      if (!sel) return false;
+      window.api.app.copy(sel);
+      xterm.clearSelection();
+      return true;
+    }
+
+    xterm.attachCustomKeyEventHandler(function (ev) {
+      if (ev.type !== 'keydown') return true;
+      // Ctrl+C는 터미널에서 중단 신호다. 고른 글이 있을 때만 복사로 쓴다.
+      if (ev.ctrlKey && !ev.altKey && ev.key === 'c' && xterm.hasSelection()) {
+        copySelection();
+        return false;
+      }
+      if (ev.ctrlKey && !ev.altKey && ev.key === 'v') {
+        paste();
+        return false;
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
+        copySelection();
+        return false;
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'V' || ev.key === 'v')) {
+        paste();
+        return false;
+      }
+      // Shift+Enter는 보내지 않고 줄만 바꾼다. 하네스는 줄바꿈 문자를 그렇게 받는다.
+      if (ev.shiftKey && !ev.ctrlKey && !ev.altKey && ev.key === 'Enter') {
+        sendText('\n');
+        return false;
+      }
+      return true;
+    });
+
+    // 오른쪽 클릭은 윈도우 콘솔 방식대로 고른 게 있으면 복사, 없으면 붙여넣기.
+    host.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+      if (!copySelection()) paste();
     });
   }
 
@@ -1331,7 +1383,8 @@
   function harnessOptions() {
     return {
       workDir: $('#harness-workdir').value.trim(),
-      model: $('#harness-model').value
+      model: $('#harness-model').value,
+      skipPermissions: $('#harness-skip').checked
     };
   }
 

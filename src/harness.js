@@ -24,14 +24,17 @@ const DEFS = [
     bin: 'openclaude',
     note: '기본. Claude Code 계열 CLI. 설정 파일 없이 환경변수로 llama-server를 가리킨다.',
     // 이 CLI는 OpenAI 호환 모드를 켜야 OPENAI_BASE_URL을 본다.
-    extraEnv: { CLAUDE_CODE_USE_OPENAI: '1' }
+    extraEnv: { CLAUDE_CODE_USE_OPENAI: '1' },
+    // 켜면 파일을 고칠 때마다 묻지 않는다. 대신 확인 없이 고치고 명령을 돌린다.
+    skipFlag: '--dangerously-skip-permissions'
   },
   {
     id: 'qwen-code',
     name: 'Qwen Code',
     npm: '@qwen-code/qwen-code',
     bin: 'qwen',
-    note: 'Qwen3-Coder용 CLI. ~/.qwen/settings.json에 llama-server를 OpenAI 호환 공급자로 등록한다.'
+    note: 'Qwen3-Coder용 CLI. ~/.qwen/settings.json에 llama-server를 OpenAI 호환 공급자로 등록한다.',
+    skipFlag: '--yolo'
   },
   {
     id: 'opencode',
@@ -52,6 +55,40 @@ const API_KEY = 'local';
 function currentApiKey() {
   const h = server.authHeaders();
   return h.Authorization ? h.Authorization.replace(/^Bearer /, '') : API_KEY;
+}
+
+// OpenClaude 상태줄의 달러 값은 실제 청구가 아니다. 내장 단가표에 Claude 모델만
+// 있어서 모르는 이름은 입력 100만 토큰당 5달러, 출력 25달러로 계산해 버린다.
+// 로컬 모델은 돈이 안 드니 그 모델의 단가를 0으로 적어 둔다.
+async function writeClaudePricing(model) {
+  const dir = path.join(os.homedir(), '.claude');
+  const file = path.join(dir, 'settings.json');
+  let cur = {};
+  try {
+    cur = JSON.parse(await fsp.readFile(file, 'utf8'));
+  } catch (e) {
+    // 파일이 없으면 새로 만든다. 읽었는데 깨진 것이면 덮어쓰지 않고 그만둔다.
+    if (e.code !== 'ENOENT') throw new Error(`settings.json을 읽지 못했다: ${e.message}`);
+  }
+  if (!cur || typeof cur !== 'object' || Array.isArray(cur)) {
+    throw new Error('settings.json 모양이 객체가 아니다');
+  }
+  cur.modelPricing = Object.assign({}, cur.modelPricing, {
+    [model]: {
+      inputTokens: 0,
+      outputTokens: 0,
+      promptCacheReadTokens: 0,
+      promptCacheWriteTokens: 0
+    }
+  });
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(file, JSON.stringify(cur, null, 2), 'utf8');
+  return file;
+}
+
+// cmd에 넘길 명령 한 줄. 허가 건너뛰기를 켜면 인자를 붙인다.
+function launchCommand(d, skip) {
+  return skip && d.skipFlag ? `${d.bin} ${d.skipFlag}` : d.bin;
 }
 
 let listener = null;
@@ -251,15 +288,18 @@ async function launchTerminal(id, opts, cfg) {
   try {
     if (d.id === 'qwen-code') log(`Qwen Code 설정 갱신: ${await writeQwenSettings(model)}`);
     if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig(cfg.ctx, model)}`);
+    if (d.id === 'openclaude') log(`비용 표시 0으로 설정: ${await writeClaudePricing(model)}`);
   } catch (e) {
     return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
   }
+
+  const skip = !!(opts && opts.skipPermissions);
 
   // workDir은 위에서 검증했다. bin은 이 파일 안의 상수라 외부 입력이 아니다.
   // cmd /k로 띄워서 CLI가 끝나도 터미널은 남는다.
   try {
     terminal.start(id, {
-      args: ['/k', d.bin],
+      args: ['/k', launchCommand(d, skip)],
       cwd: workDir,
       cols: (opts && opts.cols) || 100,
       rows: (opts && opts.rows) || 30,
@@ -273,7 +313,7 @@ async function launchTerminal(id, opts, cfg) {
   } catch (e) {
     return { ok: false, error: `터미널을 띄우지 못함: ${e.message}` };
   }
-  log(`${d.name} 실행: ${workDir} (모델 ${model})`);
+  log(`${d.name} 실행: ${workDir} (모델 ${model}${skip ? ', 허가 묻지 않음' : ''})`);
   return { ok: true, error: null, term: id };
 }
 
@@ -289,20 +329,25 @@ async function launchRemote(id, opts, target) {
   }
 
   const model = (opts && opts.model) || 'qwen38';
-  const workDir = (opts && opts.workDir) || process.env.USERPROFILE || os.homedir();
+  // 폴더를 안 고르면 홈에서 시작해 하네스가 홈을 어지른다. 고르게 한다.
+  const workDir = (opts && opts.workDir) || '';
+  if (!workDir) return { ok: false, error: '작업 폴더를 먼저 고른다.' };
   if (!fs.existsSync(workDir)) return { ok: false, error: `작업 폴더가 없다: ${workDir}` };
 
   const v1 = `${target.baseUrl}/v1`;
   try {
     if (d.id === 'qwen-code') log(`Qwen Code 설정 갱신: ${await writeQwenSettings(model, v1)}`);
     if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig((opts && opts.ctx) || 65536, model, v1)}`);
+    if (d.id === 'openclaude') log(`비용 표시 0으로 설정: ${await writeClaudePricing(model)}`);
   } catch (e) {
     return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
   }
 
+  const skip = !!(opts && opts.skipPermissions);
+
   try {
     terminal.start(id, {
-      args: ['/k', d.bin],
+      args: ['/k', launchCommand(d, skip)],
       cwd: workDir,
       cols: (opts && opts.cols) || 100,
       rows: (opts && opts.rows) || 30,
@@ -316,7 +361,7 @@ async function launchRemote(id, opts, target) {
   } catch (e) {
     return { ok: false, error: `터미널을 띄우지 못함: ${e.message}` };
   }
-  log(`${d.name} 실행: ${workDir} (모델 ${model}, 서버 ${target.baseUrl})`);
+  log(`${d.name} 실행: ${workDir} (모델 ${model}, 서버 ${target.baseUrl}${skip ? ', 허가 묻지 않음' : ''})`);
   return { ok: true, error: null, term: id };
 }
 

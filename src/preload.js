@@ -72,7 +72,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   app: {
     isAdmin: () => call('app:isAdmin'),
-    version: () => call('app:version')
+    version: () => call('app:version'),
+    copy: (text) => call('app:copy', text),
+    paste: () => call('app:paste')
   },
   update: {
     check: () => call('update:check'),

@@ -326,11 +326,29 @@
     el.scrollTop = el.scrollHeight;
   });
 
+  var WORKDIR_KEY = 'llmbench.harness.workdir';
+
   function harnessOptions() {
+    var dir = $('#harness-workdir').value.trim();
+    // 마지막에 쓴 폴더를 기억한다. 매번 고르지 않게.
+    try {
+      if (dir) window.localStorage.setItem(WORKDIR_KEY, dir);
+    } catch (e) {
+      // 저장이 막힌 환경이면 그냥 넘어간다
+    }
     return {
-      workDir: $('#harness-workdir').value.trim(),
-      model: $('#harness-model').value
+      workDir: dir,
+      model: $('#harness-model').value,
+      skipPermissions: $('#harness-skip').checked
     };
+  }
+
+  // 지난번 폴더를 채워 둔다.
+  try {
+    var lastDir = window.localStorage.getItem(WORKDIR_KEY);
+    if (lastDir) $('#harness-workdir').value = lastDir;
+  } catch (e) {
+    // 읽기가 막힌 환경이면 빈 칸으로 둔다
   }
 
   function loadHarness() {
@@ -411,6 +429,9 @@
       state.term.xterm.onData(function (d) {
         if (state.term.id) window.api.term.write(state.term.id, d);
       });
+      wireTermKeys(state.term.xterm, $('#term-host'), function (d) {
+        if (state.term.id) window.api.term.write(state.term.id, d);
+      });
       window.addEventListener('resize', termFit);
     }
 
@@ -427,6 +448,55 @@
       if (snap && snap.buf) state.term.xterm.write(snap.buf);
       termFit();
       state.term.xterm.focus();
+    });
+  }
+
+  // 터미널 키 처리. xterm은 기본으로 복사, 붙여넣기, 줄바꿈을 다 안 해 준다.
+  function wireTermKeys(xterm, host, sendText) {
+    function paste() {
+      window.api.app.paste().then(function (text) {
+        if (text) xterm.paste(text);
+      });
+    }
+    function copySelection() {
+      var sel = xterm.getSelection();
+      if (!sel) return false;
+      window.api.app.copy(sel);
+      xterm.clearSelection();
+      return true;
+    }
+
+    xterm.attachCustomKeyEventHandler(function (ev) {
+      if (ev.type !== 'keydown') return true;
+      // Ctrl+C는 터미널에서 중단 신호다. 고른 글이 있을 때만 복사로 쓴다.
+      if (ev.ctrlKey && !ev.altKey && ev.key === 'c' && xterm.hasSelection()) {
+        copySelection();
+        return false;
+      }
+      if (ev.ctrlKey && !ev.altKey && ev.key === 'v') {
+        paste();
+        return false;
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
+        copySelection();
+        return false;
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'V' || ev.key === 'v')) {
+        paste();
+        return false;
+      }
+      // Shift+Enter는 보내지 않고 줄만 바꾼다. 하네스는 줄바꿈 문자를 그렇게 받는다.
+      if (ev.shiftKey && !ev.ctrlKey && !ev.altKey && ev.key === 'Enter') {
+        sendText('\n');
+        return false;
+      }
+      return true;
+    });
+
+    // 오른쪽 클릭은 윈도우 콘솔 방식대로 고른 게 있으면 복사, 없으면 붙여넣기.
+    host.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+      if (!copySelection()) paste();
     });
   }
 

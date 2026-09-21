@@ -73,6 +73,7 @@ function registerIpc() {
     clipboard.writeText(String(text || ''));
     return { ok: true };
   });
+  ipcMain.handle('app:paste', () => clipboard.readText());
   ipcMain.handle('shell:openPath', (_e, p) => shell.openPath(p));
   ipcMain.handle('shell:pickDir', async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });

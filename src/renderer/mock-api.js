@@ -615,7 +615,9 @@
     },
     app: {
       isAdmin: function () { return Promise.resolve(false); },
-      version: function () { return Promise.resolve('0.2.0'); }
+      version: function () { return Promise.resolve('0.2.0'); },
+      copy: function () { return Promise.resolve({ ok: true }); },
+      paste: function () { return Promise.resolve('붙여넣은 글'); }
     },
     update: {
       check: function () {

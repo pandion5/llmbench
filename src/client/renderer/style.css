@@ -105,6 +105,12 @@ input[type="text"], select, textarea {
 }
 textarea { resize: vertical; font-family: inherit; }
 
+/* 한 줄에 라벨과 입력을 같이 놓는 줄에서는 입력이 남는 만큼만 차지한다. */
+.row input[type="text"] { flex: 1 1 auto; min-width: 220px; max-width: 560px; width: auto; }
+.row select { width: auto; }
+.row label { white-space: nowrap; color: var(--fg-dim); }
+input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+
 .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; margin: 0; }
 .kv dt { color: var(--fg-dim); }
 .kv dd { margin: 0; }
@@ -208,6 +214,9 @@ textarea { resize: vertical; font-family: inherit; }
 .think-body::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
 .think-body::-webkit-scrollbar-track { background: transparent; }
 .msg-error { align-self: flex-start; background: #2a1c1c; border: 1px solid #5f2f2f; }
+
+.form-check { display: flex; align-items: center; }
+.form-check input { width: auto; margin: 0; }
 
 .chat-input { display: flex; gap: 10px; align-items: flex-end; margin-top: 12px; }
 .chat-buttons { display: flex; flex-direction: column; gap: 6px; }

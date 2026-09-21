@@ -69,14 +69,17 @@
       </table>
       <div class="row">
         <label for="harness-workdir">작업 폴더</label>
-        <input type="text" id="harness-workdir" placeholder="비우면 사용자 폴더" spellcheck="false">
+        <input type="text" id="harness-workdir" placeholder="고르기를 눌러 폴더를 정한다" spellcheck="false">
         <button type="button" class="btn btn-sm" id="harness-pick">고르기</button>
         <label for="harness-model">모델</label>
         <select id="harness-model">
           <option value="qwen38">qwen38</option>
           <option value="qwen36">qwen36</option>
         </select>
+        <label for="harness-skip">허가 묻지 않기</label>
+        <span class="form-check"><input type="checkbox" id="harness-skip"></span>
       </div>
+      <p class="hint">허가 묻지 않기를 켜면 하네스가 확인 없이 파일을 고치고 명령을 돌린다. 작업 폴더를 확인하고 켠다.</p>
       <p class="hint" id="harness-msg" aria-live="polite"></p>
 
       <div class="card" id="term-card" hidden>

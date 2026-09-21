@@ -147,7 +147,9 @@ async function status() {
 async function target() {
   const s = await readState();
   if (!s) return null;
-  return { baseUrl: `http://${s.serverAddress}:8080`, apiKey: s.apiKey, name: s.name };
+  // 연결 정보에 저장된 포트가 있으면 그걸 쓴다. 없으면 기존처럼 8080.
+  const port = Number(s.apiPort) || Number(s.port) || 8080;
+  return { baseUrl: `http://${s.serverAddress}:${port}`, apiKey: s.apiKey, name: s.name };
 }
 
 async function forget() {
