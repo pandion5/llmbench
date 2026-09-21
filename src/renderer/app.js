@@ -572,6 +572,20 @@
     ctx.fillText('최대 ' + num(max, 0), 4, 12);
   }
 
+  $('#server-log-refresh').addEventListener('click', function () {
+    refreshServerLog().then(function () {
+      setText('#server-log-msg', '');
+    });
+  });
+
+  $('#server-log-save').addEventListener('click', function () {
+    window.api.server.saveLogs().then(function (r) {
+      setText('#server-log-msg', '저장했다: ' + r.path);
+    }).catch(function (err) {
+      setText('#server-log-msg', '저장 실패: ' + (err && err.message ? err.message : String(err)));
+    });
+  });
+
   $('#server-start').addEventListener('click', function () {
     setText('#server-msg', '서버를 시작하는 중이다.');
     window.api.server.start().then(applyServerStatus);
@@ -592,11 +606,22 @@
       setText('#server-msg', status.error ? status.error : '');
     }
     if (currentTab === 'bench') renderBenchModels();
+    if (currentTab === 'dashboard') refreshServerLog();
+  }
+
+  // 서버가 내보낸 줄을 그대로 보여준다. 모델 로드 실패 이유가 여기 찍힌다.
+  function refreshServerLog() {
+    return window.api.server.logs().then(function (lines) {
+      var pre = $('#server-log');
+      pre.textContent = lines.length ? lines.join('\n') : '아직 서버를 띄우지 않았다.';
+      pre.scrollTop = pre.scrollHeight;
+    });
   }
 
   function mountDashboard() {
     window.api.monitor.snapshot().then(renderSnapshot);
     window.api.server.status().then(applyServerStatus);
+    refreshServerLog();
     renderModels();
     if (state.check && state.check.hw && state.check.hw.gpu) {
       setText('#m-gpu-name', state.check.hw.gpu.name);

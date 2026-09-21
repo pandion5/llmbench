@@ -176,6 +176,14 @@ function registerIpc() {
   ipcMain.handle('server:start', async () => server.start(await config.get()));
   ipcMain.handle('server:stop', () => server.stop());
   ipcMain.handle('server:status', () => server.refresh());
+  ipcMain.handle('server:logs', () => server.logs());
+  ipcMain.handle('server:saveLogs', () =>
+    withLogsDir('server-logs', async (dir) => {
+      const file = path.join(dir, `${os.hostname()}-server-${Date.now()}.log`);
+      await fsp.writeFile(file, server.logs().join('\r\n'), 'utf8');
+      return { path: file };
+    })
+  );
 
   ipcMain.handle('monitor:snapshot', async () => sys.getSnapshot((await config.get()).installDir));
 

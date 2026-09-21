@@ -23,7 +23,9 @@ contextBridge.exposeInMainWorld('api', {
   server: {
     start: () => call('server:start'),
     stop: () => call('server:stop'),
-    status: () => call('server:status')
+    status: () => call('server:status'),
+    logs: () => call('server:logs'),
+    saveLogs: () => call('server:saveLogs')
   },
   harness: {
     list: () => call('harness:list'),

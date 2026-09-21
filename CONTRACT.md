@@ -73,6 +73,8 @@ InstallStep = {
 
 ### 서버 (server)
 - `api.server.start()` / `api.server.stop()` → `ServerStatus`
+- `api.server.logs()` → `string[]`  llama-server가 내보낸 최근 줄. 대시보드 서버 로그 카드에 그대로 보여준다.
+- `api.server.saveLogs()` → `{ path: string }`  같은 줄을 앱 폴더 `logs/server-logs/<COMPUTERNAME>-server-<ts>.log`에 저장한다.
 - `api.server.status()` → `ServerStatus`
 - 이벤트 `server:status` → `ServerStatus`
   - 라우터 `/models`의 항목은 `status: { value: 'loaded'|'unloaded'|'loading'|... }` 객체다. `loaded = status.value === 'loaded'`. 서버가 stopped/error면 models는 빈 배열.

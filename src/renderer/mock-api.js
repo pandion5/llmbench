@@ -547,7 +547,15 @@
     server: {
       start: startServer,
       stop: stopServer,
-      status: function () { return Promise.resolve(serverSnapshot()); }
+      status: function () { return Promise.resolve(serverSnapshot()); },
+      logs: function () {
+        return Promise.resolve([
+          'llama_model_loader: loaded meta data',
+          'load_tensors: offloading 48 repeating layers to GPU',
+          'srv    load_model: loading model (목 데이터)'
+        ]);
+      },
+      saveLogs: function () { return Promise.resolve({ path: 'C:\\mock\\logs\\server-logs\\MOCK-server.log' }); }
     },
     monitor: {
       snapshot: function () { return Promise.resolve(snapshot()); }

@@ -178,6 +178,17 @@
         <h2>모델</h2>
         <ul class="models" id="model-list"></ul>
       </div>
+
+      <div class="card">
+        <h2>서버 로그</h2>
+        <p class="hint">llama-server가 내보낸 줄이다. 모델이 안 올라올 때 여기에 이유가 찍힌다.</p>
+        <pre class="log log-stream" id="server-log" aria-live="off"></pre>
+        <div class="row">
+          <button type="button" class="btn" id="server-log-refresh">새로 읽기</button>
+          <button type="button" class="btn" id="server-log-save">파일로 저장</button>
+          <span class="hint" id="server-log-msg" aria-live="polite"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ④ 벤치마크 -->
