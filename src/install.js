@@ -610,12 +610,30 @@ async function hfDownload(stepId, repo, folder, fileName, localDir) {
   setStep(stepId, { status: 'done', percent: 100, detail: fmtGB(await dirSize(localDir)) });
 }
 
+// 0.3.0과 0.3.1은 MTP 파일을 qwen38/MTP/MTP 아래에 받았다. 그 파일이 있으면 제자리로 옮긴다.
+// 받다 만 파일도 같이 옮겨 이어받기를 살린다.
+async function moveStrayMtp(models) {
+  const name = path.basename(MTP_FILE);
+  const strayDir = path.join(models, 'qwen38', 'MTP', 'MTP');
+  const destDir = path.join(models, 'qwen38', 'MTP');
+  if (!fs.existsSync(path.join(strayDir, name))) return;
+  log('   이전 버전이 받아 둔 MTP 파일을 제자리로 옮긴다');
+  for (const f of [name, `${name}.parts.json`]) {
+    const from = path.join(strayDir, f);
+    if (!fs.existsSync(from)) continue;
+    await fsp.rename(from, path.join(destDir, f)).catch((e) => log(`   옮기지 못함 ${f}: ${e.message}`));
+  }
+  await fsp.rmdir(strayDir).catch(() => {});
+}
+
 async function stepModels(cfg) {
   const models = path.join(cfg.installDir, 'models');
   await hfDownload('model38', REPO_38, cfg.quant, null, path.join(models, 'qwen38'));
   if (cfg.mtp) {
     // MTP 헤드는 저장소 MTP/ 폴더에 따로 있다. 양자화와 무관하게 하나만 쓴다.
-    await hfDownload('model38', REPO_38, 'MTP', path.basename(MTP_FILE), path.join(models, 'qwen38', 'MTP'));
+    // 받는 경로에 저장소 폴더명이 그대로 붙으므로 qwen38까지만 넘긴다.
+    await moveStrayMtp(models);
+    await hfDownload('model38', REPO_38, 'MTP', path.basename(MTP_FILE), path.join(models, 'qwen38'));
   }
   await hfDownload('model36', REPO_36, null, FILE_36, path.join(models, 'qwen36'));
 }
@@ -809,6 +827,7 @@ module.exports = {
   findShard,
   pickRelease,
   hfTree,
+  moveStrayMtp,
   pickUnslothRelease,
   findServerDir,
   downloadParallel,
