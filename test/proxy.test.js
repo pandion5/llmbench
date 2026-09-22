@@ -24,7 +24,7 @@ function fakeUpstream(delayMs) {
       const timer = setInterval(() => {
         if (i >= parts.length) {
           clearInterval(timer);
-          res.write('data: {"choices":[{"delta":{}}],"usage":{"completion_tokens":3}}\n\n');
+          res.write('data: {"choices":[{"delta":{}}],"usage":{"completion_tokens":3,"prompt_tokens":11},"timings":{"prompt_n":11,"prompt_ms":220,"predicted_n":3,"predicted_ms":60}}\n\n');
           res.write('data: [DONE]\n\n');
           res.end();
           return;
@@ -104,6 +104,11 @@ function listen(server, port) {
   assert.strictEqual(rows[0].answer, '안녕하세요', rows[0].answer);
   assert.strictEqual(rows[0].model, 'qwen38');
   assert.strictEqual(rows[0].tokens, 3);
+  assert.strictEqual(rows[0].promptTokens, 11, String(rows[0].promptTokens));
+  assert.strictEqual(rows[0].promptMs, 220, String(rows[0].promptMs));
+  assert.strictEqual(rows[0].genMs, 60, String(rows[0].genMs));
+  // 스트리밍 요청에는 프록시가 usage 옵션을 붙여 보낸다.
+  assert.ok(up.seen[0].body.includes('include_usage'), up.seen[0].body);
   assert.strictEqual(rows[0].who, '이 PC', rows[0].who);
 
   // 4) 슬롯이 하나면 둘째는 줄을 선다.

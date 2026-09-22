@@ -371,6 +371,23 @@
     td.colSpan = 6;
     var box = document.createElement('div');
     box.className = 'log-detail';
+
+    // 걸린 시간을 나눠 보여준다. 프롬프트 읽기가 긴지 답 쓰기가 긴지 여기서 갈린다.
+    var t = document.createElement('div');
+    t.className = 'log-detail-time';
+    var parts = [];
+    if (row.waitMs) parts.push('줄에서 ' + msText(row.waitMs));
+    if (row.promptMs || row.promptTokens) {
+      parts.push('프롬프트 ' + (row.promptTokens || 0) + '토큰 ' + msText(row.promptMs) +
+        (row.promptMs && row.promptTokens ? ' (' + Math.round(row.promptTokens / (row.promptMs / 1000)) + ' tok/s)' : ''));
+    }
+    if (row.genMs || row.tokens) {
+      parts.push('생성 ' + (row.tokens || 0) + '토큰 ' + msText(row.genMs || row.runMs) +
+        (row.genMs && row.tokens ? ' (' + (Math.round((row.tokens / (row.genMs / 1000)) * 10) / 10) + ' tok/s)' : ''));
+    }
+    if (!parts.length) parts.push('전체 ' + msText(row.runMs));
+    t.textContent = parts.join(' · ');
+    box.appendChild(t);
     [['질문', row.prompt], ['답', row.answer]].forEach(function (pair) {
       var h = document.createElement('div');
       h.className = 'log-detail-head';
@@ -402,7 +419,8 @@
     rows.slice().reverse().forEach(function (row) {
       var tr = document.createElement('tr');
       tr.className = 'log-row';
-      var speed = row.runMs > 0 && row.tokens ? (Math.round((row.tokens / (row.runMs / 1000)) * 10) / 10) + ' tok/s' : '-';
+      var genMs = row.genMs || row.runMs;
+      var speed = genMs > 0 && row.tokens ? (Math.round((row.tokens / (genMs / 1000)) * 10) / 10) + ' tok/s' : '-';
       [timeText(row.at), row.who, row.model || '기본', cut(row.prompt, 48), String(row.tokens || 0), speed]
         .forEach(function (v) {
           var td = document.createElement('td');

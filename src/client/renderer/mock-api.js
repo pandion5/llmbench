@@ -92,7 +92,7 @@
           { at: new Date().toISOString(), who: '이 PC', address: '127.0.0.1', model: 'qwen36',
             waitMs: 0, runMs: 16200, tokens: 60, prompt: '한국에서 제일 높은 산은?', answer: '백두산이 2744m로 가장 높다.' },
           { at: new Date().toISOString(), who: '박영범', address: '10.66.0.2', model: 'qwen38',
-            waitMs: 2400, runMs: 88000, tokens: 1024, prompt: 'src/wireguard.js를 읽고 다섯 줄로 정리해줘', answer: '터널 서비스를 올리고 내린다.' }
+            waitMs: 2400, runMs: 88000, tokens: 1024, promptTokens: 6200, promptMs: 41000, genMs: 47000, prompt: 'src/wireguard.js를 읽고 다섯 줄로 정리해줘', answer: '터널 서비스를 올리고 내린다.' }
         ]);
       }
     },

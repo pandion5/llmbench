@@ -224,6 +224,14 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   border-left: 1px solid var(--accent);
   background: var(--bg);
 }
+.log-detail-time {
+  font-size: 12px;
+  color: var(--fg);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
 .log-detail-head {
   font-size: 12px;
   color: var(--fg-dim);

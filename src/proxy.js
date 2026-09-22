@@ -67,6 +67,9 @@ function view(j) {
     promptChars: j.prompt ? j.prompt.length : 0,
     answerChars: j.answer ? j.answer.length : 0,
     tokens: j.tokens || 0,
+    promptTokens: j.promptTokens || 0,
+    promptMs: j.promptMs || 0,
+    genMs: j.genMs || 0,
     canceled: !!j.canceled,
     error: j.error || null
   };
@@ -108,6 +111,9 @@ async function writeLog(job) {
     waitMs: (job.startedAt || job.at) - job.at,
     runMs: (job.endedAt || Date.now()) - (job.startedAt || job.at),
     tokens: job.tokens || 0,
+    promptTokens: job.promptTokens || 0,
+    promptMs: job.promptMs || 0,
+    genMs: job.genMs || 0,
     canceled: !!job.canceled,
     error: job.error || null,
     prompt: job.prompt || '',
@@ -190,6 +196,15 @@ function collectDelta(json, job) {
   if (typeof d.reasoning_content === 'string') job.reasoning += d.reasoning_content;
   if (typeof c.text === 'string') job.answer += c.text;
   if (json.usage && json.usage.completion_tokens) job.tokens = json.usage.completion_tokens;
+  if (json.usage && json.usage.prompt_tokens) job.promptTokens = json.usage.prompt_tokens;
+  // llama.cpp는 마지막 조각에 걸린 시간을 나눠서 준다. 프롬프트를 읽는 데 쓴 시간과
+  // 답을 쓰는 데 쓴 시간이 갈려 있어서 어디가 느린지 바로 보인다.
+  if (json.timings) {
+    job.promptMs = Math.round(json.timings.prompt_ms || 0);
+    job.genMs = Math.round(json.timings.predicted_ms || 0);
+    if (json.timings.prompt_n) job.promptTokens = json.timings.prompt_n;
+    if (json.timings.predicted_n) job.tokens = json.timings.predicted_n;
+  }
 }
 
 // ---------- 줄 세우기 ----------
@@ -371,6 +386,16 @@ async function handle(req, res) {
     body = null;
   }
 
+  // 스트리밍은 옵션을 켜야 마지막 조각에 토큰 수와 걸린 시간이 실린다.
+  // 클라이언트가 안 켜도 기록이 남게 여기서 붙인다.
+  if (body && body.stream) {
+    const opt = Object.assign({}, body.stream_options, { include_usage: true });
+    if (JSON.stringify(opt) !== JSON.stringify(body.stream_options)) {
+      body.stream_options = opt;
+      bodyBuf = Buffer.from(JSON.stringify(body), 'utf8');
+    }
+  }
+
   const job = {
     id: ++seq,
     at: Date.now(),
@@ -381,6 +406,9 @@ async function handle(req, res) {
     answer: '',
     reasoning: '',
     tokens: 0,
+    promptTokens: 0,
+    promptMs: 0,
+    genMs: 0,
     startedAt: null,
     endedAt: null,
     canceled: false,
