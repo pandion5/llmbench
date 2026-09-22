@@ -693,6 +693,15 @@ async function buildVerdict(summary, hw, cfg, gpuAvgUtilPct) {
   });
 }
 
+// 마지막 결과와 돌고 있는지 여부. 프록시가 클라이언트에 내준다.
+function last() {
+  return lastResult;
+}
+
+function busy() {
+  return !!(controller || benchChild);
+}
+
 function cancel() {
   if (controller) controller.abort();
   if (benchChild) {
@@ -709,4 +718,4 @@ async function exportLast(dir) {
   return { path: file };
 }
 
-module.exports = { loadModeArgs, loadModeState, runBenchExe, run, cancel, exportLast, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };
+module.exports = { loadModeArgs, loadModeState, runBenchExe, run, cancel, exportLast, last, busy, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };

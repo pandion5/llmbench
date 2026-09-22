@@ -153,14 +153,17 @@ async function target() {
 }
 
 // 서버 프록시에 물어본다. 상태와 기록 조회에 쓴다.
-async function ask(pathname, params, method) {
+async function ask(pathname, params, method, body) {
   const t = await target();
   if (!t) throw new Error('서버에 연결돼 있지 않다');
   const url = new URL(pathname, t.baseUrl);
   for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
+  const headers = t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {};
+  if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, {
     method: method || 'GET',
-    headers: t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {},
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20000)
   });
   if (!res.ok) {
@@ -190,6 +193,17 @@ function serverUpdateApply() {
   return ask('/llmbench/update/apply', null, 'POST');
 }
 
+// 서버 PC의 벤치. 결과를 읽고, 시키고, 멈춘다.
+function benchInfo() {
+  return ask('/llmbench/bench');
+}
+function benchRun(opts) {
+  return ask('/llmbench/bench/run', null, 'POST', opts || {});
+}
+function benchCancel() {
+  return ask('/llmbench/bench/cancel', null, 'POST');
+}
+
 function serverStatus() {
   return ask('/llmbench/status');
 }
@@ -216,5 +230,6 @@ async function forget() {
 module.exports = {
   installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL,
   serverStatus, serverLogDays, serverLog, serverInfo,
-  serverStart, serverStop, serverUpdateCheck, serverUpdateApply
+  serverStart, serverStop, serverUpdateCheck, serverUpdateApply,
+  benchInfo, benchRun, benchCancel
 };

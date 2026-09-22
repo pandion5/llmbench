@@ -66,6 +66,9 @@ async function ensureAdmin() {
 
 // registerIpc 안에서 만든 함수를 부팅 때도 쓴다.
 let startProxyAtBoot = async () => {};
+// 벤치 진행 글과 마지막 오류. 클라이언트가 터널 너머에서 읽는다.
+let benchProgress = null;
+let benchError = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -306,8 +309,28 @@ function registerIpc() {
         updateApply: async (from) => {
           console.log(`[제어] ${from.who}(${from.address})가 앱 업데이트를 요청`);
           return update.apply();
+        },
+        // 벤치는 몇 분 걸린다. 시작만 시키고 바로 답한다. 진행은 /llmbench/bench로 본다.
+        benchRun: async (from, body) => {
+          if (bench.busy()) throw new Error('벤치가 이미 돌고 있다');
+          const opts = { model: (body && body.model) || 'qwen38', mode: (body && body.mode) || 'ncmoe' };
+          console.log(`[제어] ${from.who}(${from.address})가 벤치 시작을 요청 (${opts.model}, ${opts.mode})`);
+          benchError = null;
+          runBench(opts).catch((e) => { benchError = e.message; });
+          return { ok: true, started: opts };
+        },
+        benchCancel: async (from) => {
+          console.log(`[제어] ${from.who}(${from.address})가 벤치 중지를 요청`);
+          bench.cancel();
+          return { ok: true };
         }
-      }
+      },
+      benchInfo: async () => ({
+        busy: bench.busy(),
+        progress: benchProgress,
+        error: benchError,
+        last: bench.last()
+      })
     });
   }
 
@@ -363,7 +386,8 @@ function registerIpc() {
 
   ipcMain.handle('monitor:snapshot', async () => sys.getSnapshot((await config.get()).installDir));
 
-  ipcMain.handle('bench:run', async (_e, opts) => {
+  // 화면에서도, 클라이언트가 터널 너머에서도 같은 길로 벤치를 돌린다.
+  async function runBench(opts) {
     const res = await bench.run(opts, await config.get());
     // 결과는 끝나는 대로 남긴다. 저장 버튼을 안 눌러 결과가 사라지는 일이 있었다.
     try {
@@ -373,7 +397,9 @@ function registerIpc() {
       res.saveError = e.message;
     }
     return res;
-  });
+  }
+
+  ipcMain.handle('bench:run', (_e, opts) => runBench(opts));
   ipcMain.handle('bench:cancel', () => bench.cancel());
   ipcMain.handle('bench:export', () => withLogsDir('bench-logs', (dir) => bench.exportLast(dir)));
 
@@ -428,7 +454,10 @@ function registerIpc() {
   install.onProgress((s) => broadcast('install:progress', s));
   server.onStatus((s) => broadcast('server:status', s));
   proxy.onEvent((s) => broadcast('proxy:status', s));
-  bench.onProgress((p) => broadcast('bench:progress', p));
+  bench.onProgress((p) => {
+    benchProgress = p;
+    broadcast('bench:progress', p);
+  });
   harness.onLog((line) => broadcast('harness:log', line));
   update.onProgress((p) => broadcast('update:progress', p));
   terminal.onEvent((e) => broadcast('term:event', e));

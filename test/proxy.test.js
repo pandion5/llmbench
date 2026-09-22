@@ -86,8 +86,10 @@ function listen(server, port) {
     serverInfo: async () => ({ status: { state: 'ready', models: [] }, logs: ['한 줄'] }),
     control: {
       startServer: async (from) => ({ ok: true, by: from.who }),
-      stopServer: async () => ({ ok: true })
-    }
+      stopServer: async () => ({ ok: true }),
+      benchRun: async (from, body) => ({ ok: true, got: body })
+    },
+    benchInfo: async () => ({ busy: false, last: { mode: 'ncmoe' } })
   });
   await new Promise((r) => setTimeout(r, 200));
   const addr = proxy.address();
@@ -186,6 +188,22 @@ function listen(server, port) {
   await new Promise((r) => setTimeout(r, 100));
   const ctl = await fsp.readFile(path.join(logDir, 'control.jsonl'), 'utf8');
   assert.ok(ctl.includes('서버 켜기'), ctl);
+
+  // 6-4) 벤치 시작은 본문을 그대로 넘기고, 조회는 결과를 준다.
+  const br = await new Promise((resolve) => {
+    const data = JSON.stringify({ model: 'qwen36', mode: 'standard' });
+    const rq = http.request({ host: '127.0.0.1', port: PORT, method: 'POST', path: '/llmbench/bench/run',
+      headers: { Authorization: 'Bearer testkey123', 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+      let out = '';
+      res.on('data', (c) => (out += c));
+      res.on('end', () => resolve(JSON.parse(out)));
+    });
+    rq.write(data);
+    rq.end();
+  });
+  assert.deepStrictEqual(br.got, { model: 'qwen36', mode: 'standard' }, JSON.stringify(br));
+  const bi = await call('GET', '/llmbench/bench');
+  assert.strictEqual(bi.body.last.mode, 'ncmoe');
 
   // 7) 질문 뽑기가 마지막 사용자 발화를 고른다.
   const pick = proxy._internal.promptOf({

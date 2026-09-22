@@ -596,6 +596,119 @@
     });
   });
 
+  // ---------- 벤치 ----------
+  // 서버 PC에서 돌린 벤치 결과를 읽고, 여기서 시키고 멈춘다. 도는 동안은 llama-server가 내려간다.
+
+  var benchWatch = null;
+
+  function num1(n, d) {
+    return n === null || n === undefined ? '-' : Number(n).toFixed(d);
+  }
+
+  function benchTable(head, rows) {
+    var h = $('#bench-head');
+    var b = $('#bench-rows');
+    h.textContent = '';
+    b.textContent = '';
+    head.forEach(function (t) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = t;
+      h.appendChild(th);
+    });
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.best) tr.className = 'row-best';
+      r.cells.forEach(function (t) {
+        var td = document.createElement('td');
+        td.textContent = t;
+        tr.appendChild(td);
+      });
+      b.appendChild(tr);
+    });
+    $('#bench-table').hidden = !rows.length;
+  }
+
+  function benchRenderLast(last) {
+    if (!last) {
+      setText('#bench-note', '아직 결과가 없다.');
+      benchTable([], []);
+      return;
+    }
+    var when = new Date(last.ts);
+    var stamp = isNaN(when.getTime()) ? '' : ' · ' + when.toLocaleString();
+    if (last.mode === 'ncmoe' && last.ncmoe) {
+      var t = last.ncmoe;
+      setText('#bench-note', last.model + ' · ' + t.gguf + stamp + ' · 프롬프트가 가장 빠른 값: 층 ' + t.best.ncmoe +
+        ' (pp512 ' + num1(t.best.pp512, 1) + ', tg128 ' + num1(t.best.tg128, 2) + ')' +
+        (t.currentPp512 ? ' · 지금 설정 pp512 ' + num1(t.currentPp512, 1) : ''));
+      benchTable(['CPU에 둔 층', 'pp512 tok/s', 'tg128 tok/s', '비고'], t.rows.map(function (r) {
+        return { best: r.ok && r.ncmoe === t.best.ncmoe, cells: [String(r.ncmoe), r.ok ? num1(r.pp512, 1) : '-', r.ok ? num1(r.tg128, 2) : '-', r.ok ? '' : '실패. VRAM이 모자란 것으로 본다'] };
+      }));
+      return;
+    }
+    if (last.mode === 'tuning' && last.tuning) {
+      var u = last.tuning;
+      setText('#bench-note', last.model + ' · ' + u.gguf + stamp + ' · 가장 빠름: 스레드 ' + u.best.threads + ', poll ' + u.best.poll + ', 마스크 ' + (u.best.cpuMask || '없음'));
+      benchTable(['스레드', 'poll', 'CPU 마스크', 'tg128 tok/s'], u.rows.slice(0, 12).map(function (r, i) {
+        return { best: i === 0, cells: [String(r.threads), String(r.poll), r.cpuMask === '0x0' ? '없음' : r.cpuMask, num1(r.tg128, 2)] };
+      }));
+      return;
+    }
+    var s = last.summary || {};
+    setText('#bench-note', last.model + stamp + ' · 프롬프트 ' + num1(s.avgPromptTokPerSec, 1) + ' tok/s · 생성 ' + num1(s.avgGenTokPerSec, 1) + ' tok/s');
+    benchTable([], []);
+  }
+
+  function benchWatchStop() {
+    if (benchWatch) {
+      clearInterval(benchWatch);
+      benchWatch = null;
+    }
+  }
+
+  function usageBench() {
+    return window.api.usage.bench().then(function (r) {
+      var pre = $('#bench-progress');
+      if (r.busy) {
+        pre.hidden = false;
+        pre.textContent = (r.progress && r.progress.text) || '도는 중';
+        pre.scrollTop = pre.scrollHeight;
+        setText('#bench-msg', '돌고 있다' + (r.progress && r.progress.total ? ' (' + r.progress.promptIdx + '/' + r.progress.total + ')' : ''));
+        if (!benchWatch) benchWatch = setInterval(usageBench, 3000);
+      } else {
+        pre.hidden = true;
+        benchWatchStop();
+        setText('#bench-msg', r.error ? '마지막 벤치가 실패했다: ' + r.error : '');
+      }
+      benchRenderLast(r.last);
+    }).catch(function (err) {
+      setText('#bench-msg', '읽지 못했다: ' + errText(err));
+      benchWatchStop();
+    });
+  }
+
+  $('#bench-reload').addEventListener('click', usageBench);
+  $('#bench-run').addEventListener('click', function () {
+    var model = $('#bench-model').value;
+    var mode = $('#bench-mode').value;
+    if (!confirm('서버 PC에서 벤치를 돌린다. 도는 동안 llama-server가 내려가서 다른 사람 대화가 끊긴다. 끝나도 서버는 자동으로 다시 켜지지 않는다. 진행할까?')) return;
+    setText('#bench-msg', '시작하라고 보냈다.');
+    window.api.usage.benchRun({ model: model, mode: mode }).then(function () {
+      return usageBench();
+    }).catch(function (err) {
+      setText('#bench-msg', '시작하지 못했다: ' + errText(err));
+    });
+  });
+  $('#bench-cancel').addEventListener('click', function () {
+    window.api.usage.benchCancel().then(function () {
+      setText('#bench-msg', '중지하라고 보냈다.');
+      return usageBench();
+    }).catch(function (err) {
+      setText('#bench-msg', '중지하지 못했다: ' + errText(err));
+    });
+  });
+
   function usageStatus() {
     return window.api.usage.status().then(usageRender).catch(function (err) {
       kvFill('#usage-kv', [['서버', '상태를 읽지 못했다: ' + errText(err)]]);
@@ -609,6 +722,7 @@
       usageTimer = null;
     }
     if (on) usageTimer = setInterval(usageStatus, 3000);
+    if (!on) benchWatchStop();
   }
 
   $('#usage-day').addEventListener('change', usageLoadDay);
@@ -620,6 +734,7 @@
   function mountUsage() {
     usageStatus();
     usageServer();
+    usageBench();
     usageLoadDays();
   }
 

@@ -100,6 +100,23 @@
       serverStop: function () { return Promise.resolve({ ok: true }); },
       serverUpdateCheck: function () { return Promise.resolve({ current: '0.10.3', latest: '0.11.0', available: true, notes: '', error: null }); },
       serverUpdateApply: function () { return Promise.resolve({ ok: true }); },
+      bench: function () {
+        return Promise.resolve({
+          busy: false, error: null, progress: null,
+          last: { mode: 'ncmoe', model: 'qwen38', ts: Date.now(), ncmoe: {
+            gguf: 'Qwen3.8-UD-IQ3_XXS-00001-of-00004.gguf', current: 99, seconds: 412,
+            rows: [
+              { ncmoe: 48, ok: true, pp512: 121.3, tg128: 16.7 },
+              { ncmoe: 44, ok: true, pp512: 138.9, tg128: 17.9 },
+              { ncmoe: 40, ok: true, pp512: 157.2, tg128: 19.4 },
+              { ncmoe: 36, ok: false, pp512: null, tg128: null, error: 'cudaMalloc failed' }
+            ],
+            best: { ncmoe: 40, pp512: 157.2, tg128: 19.4 }, currentPp512: 121.3, currentTg128: 16.7
+          } }
+        });
+      },
+      benchRun: function () { return Promise.resolve({ ok: true }); },
+      benchCancel: function () { return Promise.resolve({ ok: true }); },
       days: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
       log: function () {
         return Promise.resolve([

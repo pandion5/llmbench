@@ -156,6 +156,33 @@
       </div>
 
       <div class="card">
+        <h2>벤치</h2>
+        <div class="row">
+          <label for="bench-model">모델</label>
+          <select id="bench-model">
+            <option value="qwen38">qwen38</option>
+            <option value="qwen36">qwen36</option>
+          </select>
+          <label for="bench-mode">모드</label>
+          <select id="bench-mode">
+            <option value="ncmoe">CPU 전문가 층 (48부터 4씩 내림)</option>
+            <option value="standard">표준 (pp512 / tg128)</option>
+            <option value="tuning">튜닝 (스레드 × poll × 마스크)</option>
+          </select>
+          <button type="button" class="btn btn-sm btn-primary" id="bench-run">시작</button>
+          <button type="button" class="btn btn-sm" id="bench-cancel">중지</button>
+          <button type="button" class="btn btn-sm" id="bench-reload">결과 가져오기</button>
+          <span class="hint" id="bench-msg" aria-live="polite"></span>
+        </div>
+        <pre class="log" id="bench-progress" hidden></pre>
+        <p class="hint" id="bench-note"></p>
+        <table class="grid" id="bench-table" hidden>
+          <thead><tr id="bench-head"></tr></thead>
+          <tbody id="bench-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
         <h2>기록</h2>
         <div class="row">
           <label for="usage-day">날짜</label>

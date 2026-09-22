@@ -274,3 +274,6 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 
 /* 카드 안의 작은 제목. 표 아래에 목록을 나눌 때 쓴다. */
 h3.sub { font-size: 13px; font-weight: 500; color: var(--fg-dim); margin: 14px 0 0; }
+
+/* 표에서 가장 좋은 줄. */
+.row-best td, .row-best th { color: var(--accent); font-weight: 600; }

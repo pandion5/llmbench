@@ -37,7 +37,9 @@ const ACTION_NAMES = {
   '/llmbench/server/start': '서버 켜기',
   '/llmbench/server/stop': '서버 끄기',
   '/llmbench/update/check': '업데이트 확인',
-  '/llmbench/update/apply': '앱 업데이트'
+  '/llmbench/update/apply': '앱 업데이트',
+  '/llmbench/bench/run': '벤치 시작',
+  '/llmbench/bench/cancel': '벤치 중지'
 };
 
 async function recordEvent(ev) {
@@ -398,7 +400,9 @@ async function handle(req, res) {
     '/llmbench/server/start': { fn: control.startServer, post: true },
     '/llmbench/server/stop': { fn: control.stopServer, post: true },
     '/llmbench/update/check': { fn: control.updateCheck, post: false },
-    '/llmbench/update/apply': { fn: control.updateApply, post: true }
+    '/llmbench/update/apply': { fn: control.updateApply, post: true },
+    '/llmbench/bench/run': { fn: control.benchRun, post: true },
+    '/llmbench/bench/cancel': { fn: control.benchCancel, post: true }
   };
   if (actions[urlPath]) {
     if (!checkKey(req)) return unauthorized(res);
@@ -413,10 +417,18 @@ async function handle(req, res) {
       res.end(JSON.stringify({ error: { message: '이 서버는 그 동작을 지원하지 않는다' } }));
       return;
     }
+    // 본문이 있으면 JSON으로 읽어 넘긴다. 벤치 시작이 모델과 모드를 이렇게 받는다.
+    let payload = null;
+    try {
+      const buf = await readBody(req);
+      if (buf.length) payload = JSON.parse(buf.toString('utf8'));
+    } catch (e) {
+      payload = null;
+    }
     let out;
     const who = whoIs(address);
     try {
-      out = await a.fn({ who, address });
+      out = await a.fn({ who, address }, payload);
     } catch (e) {
       // 확인은 상태를 안 바꾸니 남기지 않는다.
       if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: false, error: e.message });
@@ -427,6 +439,20 @@ async function handle(req, res) {
     if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: true, error: null });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(out === undefined ? { ok: true } : out));
+    return;
+  }
+
+  // 벤치 결과. 돌고 있으면 진행 글도 같이 준다.
+  if (urlPath === '/llmbench/bench') {
+    if (!checkKey(req)) return unauthorized(res);
+    let data = { busy: false, progress: null, last: null };
+    try {
+      data = opts.benchInfo ? await opts.benchInfo() : data;
+    } catch (e) {
+      data.error = e.message;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
     return;
   }
 
@@ -545,6 +571,8 @@ function start(o) {
     serverInfo: o.serverInfo || null,
     // 켜기, 끄기, 업데이트 함수 묶음. 없으면 그 경로는 501을 준다.
     control: o.control || null,
+    // 벤치 결과와 진행 상황을 주는 함수.
+    benchInfo: o.benchInfo || null,
     limit: o.limit || 1,
     // 0을 주면 빈 포트를 골라 준다. 검사에서 쓴다.
     port: Number.isInteger(o.port) ? o.port : PORT,
