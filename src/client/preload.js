@@ -38,7 +38,8 @@ contextBridge.exposeInMainWorld('api', {
   app: {
     version: () => call('app:version'),
     copy: (text) => call('app:copy', text),
-    paste: () => call('app:paste')
+    paste: () => call('app:paste'),
+    workspace: () => call('app:workspace')
   },
   shell: {
     openPath: (p) => call('shell:openPath', p),

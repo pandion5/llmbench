@@ -2,6 +2,7 @@
 // 클라이언트 앱. 초대 코드로 터널을 올리고, 서버의 llama-server에 대화를 보낸다.
 // 모델 설치나 벤치마크는 없다. 그쪽은 서버 앱이 맡는다.
 
+const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain, shell, dialog, clipboard } = require('electron');
 
@@ -12,6 +13,24 @@ const harness = require('../harness');
 const update = require('../update');
 
 const INDEX_HTML = path.join(__dirname, 'renderer', 'index.html');
+
+// 하네스 기본 작업 폴더. 실행 파일이 있는 자리에 workspace를 만든다.
+// 안 정하면 하네스가 홈에서 시작해 사용자 폴더를 어지른다.
+function workspaceDir() {
+  const base = app.isPackaged ? path.dirname(process.execPath) : process.cwd();
+  return path.join(base, 'workspace');
+}
+
+function ensureWorkspace() {
+  const dir = workspaceDir();
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch (e) {
+    // 쓸 수 없는 자리에 깔린 경우다. 화면에서 직접 고르게 둔다.
+    return null;
+  }
+}
 let statusTimer = null;
 
 function broadcast(channel, payload) {
@@ -63,7 +82,10 @@ function registerIpc() {
   ipcMain.handle('harness:launch', async (_e, id, opts) => {
     const t = await tunnel.target();
     if (!t) return { ok: false, error: '서버에 연결돼 있지 않다' };
-    return harness.launchRemote(id, opts, t);
+    // 화면에서 폴더를 비워 보냈으면 기본 workspace로 채운다.
+    const withDir = Object.assign({}, opts);
+    if (!withDir.workDir) withDir.workDir = ensureWorkspace() || '';
+    return harness.launchRemote(id, withDir, t);
   });
 
   ipcMain.handle('update:check', () => update.check());
@@ -74,6 +96,7 @@ function registerIpc() {
     return { ok: true };
   });
   ipcMain.handle('app:paste', () => clipboard.readText());
+  ipcMain.handle('app:workspace', () => ensureWorkspace());
   ipcMain.handle('shell:openPath', (_e, p) => shell.openPath(p));
   ipcMain.handle('shell:pickDir', async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });

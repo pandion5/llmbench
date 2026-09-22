@@ -81,7 +81,8 @@
     app: {
       version: function () { return Promise.resolve('0.6.0'); },
       copy: function () { return Promise.resolve({ ok: true }); },
-      paste: function () { return Promise.resolve('붙여넣은 글'); }
+      paste: function () { return Promise.resolve('붙여넣은 글'); },
+      workspace: function () { return Promise.resolve('C:\\llmbench\\workspace'); }
     },
     shell: {
       openPath: function () { return Promise.resolve(); },

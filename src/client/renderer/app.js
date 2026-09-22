@@ -328,13 +328,20 @@
 
   var WORKDIR_KEY = 'llmbench.harness.workdir';
 
-  // 작업 폴더가 비어 있으면 고르기 창을 띄우고 고른 값을 칸에 넣는다.
+  // 작업 폴더가 비어 있으면 실행 파일 옆 workspace를 쓴다.
+  // 그 자리에 못 만들면 그때 고르기 창을 띄운다.
   function ensureWorkDir() {
     var dir = $('#harness-workdir').value.trim();
     if (dir) return Promise.resolve(dir);
-    return window.api.shell.pickDir().then(function (picked) {
-      if (picked) $('#harness-workdir').value = picked;
-      return picked || '';
+    return window.api.app.workspace().then(function (def) {
+      if (def) {
+        $('#harness-workdir').value = def;
+        return def;
+      }
+      return window.api.shell.pickDir().then(function (picked) {
+        if (picked) $('#harness-workdir').value = picked;
+        return picked || '';
+      });
     });
   }
 
@@ -353,12 +360,19 @@
     };
   }
 
-  // 지난번 폴더를 채워 둔다.
+  // 지난번 폴더를 채워 둔다. 없으면 기본 workspace를 보여 준다.
   try {
     var lastDir = window.localStorage.getItem(WORKDIR_KEY);
     if (lastDir) $('#harness-workdir').value = lastDir;
   } catch (e) {
     // 읽기가 막힌 환경이면 빈 칸으로 둔다
+  }
+  if (!$('#harness-workdir').value) {
+    window.api.app.workspace().then(function (def) {
+      if (def && !$('#harness-workdir').value) $('#harness-workdir').value = def;
+    }).catch(function () {
+      // 못 만들면 빈 칸으로 둔다. 열 때 고르기 창이 뜬다.
+    });
   }
 
   function loadHarness() {

@@ -1,6 +1,6 @@
 {
   "name": "llmbench",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "로컬 LLM(llama.cpp router) 점검, 설치, 모니터, 벤치마크 도구",
   "main": "src/entry.js",
   "private": true,
