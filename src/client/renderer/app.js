@@ -548,8 +548,34 @@
     if (p.stage === 'error') updateBtn.title = p.text;
   });
 
-  function lookForUpdate() {
-    window.api.update.check().then(function (u) {
+  var checkBtn = $('#update-check');
+  var checkTimer = null;
+
+  // 버튼을 눌러 확인했을 때만 결과를 버튼에 적는다. 30분마다 도는 확인은 조용히 지나간다.
+  function showCheckResult(text, title) {
+    checkBtn.disabled = false;
+    checkBtn.textContent = text;
+    checkBtn.title = title || '';
+    if (checkTimer) clearTimeout(checkTimer);
+    checkTimer = setTimeout(function () {
+      checkBtn.textContent = '업데이트 확인';
+      checkBtn.title = '';
+    }, 4000);
+  }
+
+  checkBtn.addEventListener('click', function () {
+    checkBtn.disabled = true;
+    checkBtn.textContent = '확인 중';
+    lookForUpdate(true);
+  });
+
+  function lookForUpdate(manual) {
+    return window.api.update.check().then(function (u) {
+      if (manual) {
+        if (u && u.error) showCheckResult('확인 실패', u.error);
+        else if (u && u.available) showCheckResult('새 버전 있음', 'v' + u.latest);
+        else showCheckResult('최신 버전', u && u.current ? 'v' + u.current : '');
+      }
       if (!u || !u.available || updateWired) return;
       updateWired = true;
       updateBtn.hidden = false;
@@ -567,8 +593,9 @@
           }
         });
       });
-    }).catch(function () {
+    }).catch(function (err) {
       // 확인에 실패해도 다음 회차에 다시 본다
+      if (manual) showCheckResult('확인 실패', errText(err));
     });
   }
   lookForUpdate();
