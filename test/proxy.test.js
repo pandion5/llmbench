@@ -171,6 +171,15 @@ function listen(server, port) {
   assert.strictEqual(st2.body.by, '이 PC');
   const na = await call('POST', '/llmbench/update/apply');
   assert.strictEqual(na.status, 501, `없는 동작 ${na.status}`);
+  // 누가 시켰는지 남는다. 켜기 한 번이 기록돼 있어야 한다.
+  const evs = proxy.status().events;
+  assert.strictEqual(evs.length, 1, `기록 ${evs.length}건`);
+  assert.strictEqual(evs[0].who, '이 PC');
+  assert.strictEqual(evs[0].action, '서버 켜기');
+  assert.strictEqual(evs[0].ok, true);
+  await new Promise((r) => setTimeout(r, 100));
+  const ctl = await fsp.readFile(path.join(logDir, 'control.jsonl'), 'utf8');
+  assert.ok(ctl.includes('서버 켜기'), ctl);
 
   // 7) 질문 뽑기가 마지막 사용자 발화를 고른다.
   const pick = proxy._internal.promptOf({

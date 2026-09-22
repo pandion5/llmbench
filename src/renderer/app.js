@@ -1230,8 +1230,39 @@
     return t.length > n ? t.slice(0, n) + '…' : t;
   }
 
+
+  // 누가 서버를 켜고 끄고 업데이트했는지 한 줄씩 보여준다.
+  function eventsRender(sel, list) {
+    var el = $(sel);
+    el.textContent = '';
+    if (!list || !list.length) {
+      var li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = '아직 아무도 서버를 켜거나 끄지 않았다.';
+      el.appendChild(li);
+      return;
+    }
+    list.slice(0, 10).forEach(function (ev) {
+      var li = document.createElement('li');
+      var t = document.createElement('span');
+      t.className = 'event-time';
+      t.textContent = timeText(ev.at);
+      var w = document.createElement('span');
+      w.className = 'event-who';
+      w.textContent = ev.who;
+      var a = document.createElement('span');
+      a.textContent = ev.action + (ev.ok ? '' : ' (실패: ' + (ev.error || '') + ')');
+      if (!ev.ok) a.className = 'event-fail';
+      li.appendChild(t);
+      li.appendChild(w);
+      li.appendChild(a);
+      el.appendChild(li);
+    });
+  }
+
   function usageRender(st) {
     if (!st) return;
+    eventsRender('#usage-events', st.events);
     kvFill('#usage-kv', [
       ['프록시', st.error ? st.error : (st.listening ? '듣고 있음 (' + st.host + ':' + st.port + ')' : '안 떠 있음')],
       ['한 번에 받는 수', String(st.limit)],

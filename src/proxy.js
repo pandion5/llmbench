@@ -30,6 +30,28 @@ const waiting = [];
 // 최근에 끝난 것. 화면에서 바로 보여주려고 들고 있는다.
 const recent = [];
 const RECENT_MAX = 50;
+// 누가 서버를 켜고 끄고 업데이트했는지. 화면에 보여주고 파일에도 남긴다.
+const events = [];
+const EVENTS_MAX = 50;
+const ACTION_NAMES = {
+  '/llmbench/server/start': '서버 켜기',
+  '/llmbench/server/stop': '서버 끄기',
+  '/llmbench/update/check': '업데이트 확인',
+  '/llmbench/update/apply': '앱 업데이트'
+};
+
+async function recordEvent(ev) {
+  events.unshift(ev);
+  while (events.length > EVENTS_MAX) events.pop();
+  emit();
+  if (!opts || !opts.logDir) return;
+  try {
+    await fsp.mkdir(opts.logDir, { recursive: true });
+    await fsp.appendFile(path.join(opts.logDir, 'control.jsonl'), JSON.stringify(ev) + '\n', 'utf8');
+  } catch (e) {
+    // 파일에 못 남겨도 화면에는 남는다
+  }
+}
 
 function onEvent(cb) {
   listener = cb;
@@ -49,7 +71,8 @@ function status() {
     limit: opts ? opts.limit : 1,
     running: [...running.values()].map(view),
     waiting: waiting.map(view),
-    recent: recent.map(view)
+    recent: recent.map(view),
+    events: events.slice()
   };
 }
 
@@ -374,13 +397,17 @@ async function handle(req, res) {
       return;
     }
     let out;
+    const who = whoIs(address);
     try {
-      out = await a.fn({ who: whoIs(address), address });
+      out = await a.fn({ who, address });
     } catch (e) {
+      // 확인은 상태를 안 바꾸니 남기지 않는다.
+      if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: false, error: e.message });
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: { message: e.message } }));
       return;
     }
+    if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: true, error: null });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(out === undefined ? { ok: true } : out));
     return;
@@ -395,6 +422,7 @@ async function handle(req, res) {
     } catch (e) {
       data = { status: null, logs: [], error: e.message };
     }
+    data.events = events.slice();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(data));
     return;

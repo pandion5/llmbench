@@ -620,7 +620,8 @@
           upstream: 'http://127.0.0.1:8081', limit: 1,
           running: [{ id: 3, who: '박영범', address: '10.66.0.2', model: 'qwen38', waitMs: 0, runMs: 4200, tokens: 81 }],
           waiting: [{ id: 4, who: '노트북', address: '10.66.0.3', model: 'qwen38', waitMs: 3100, runMs: 0, tokens: 0 }],
-          recent: []
+          recent: [],
+          events: [{ at: new Date().toISOString(), who: '박영범', address: '10.66.0.2', action: '서버 켜기', ok: true, error: null }]
         });
       },
       restart: function () { return Promise.resolve({ listening: true }); },

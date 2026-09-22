@@ -470,6 +470,36 @@
     });
   }
 
+
+  // 누가 서버를 켜고 끄고 업데이트했는지 한 줄씩 보여준다.
+  function eventsRender(sel, list) {
+    var el = $(sel);
+    el.textContent = '';
+    if (!list || !list.length) {
+      var li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = '아직 아무도 서버를 켜거나 끄지 않았다.';
+      el.appendChild(li);
+      return;
+    }
+    list.slice(0, 10).forEach(function (ev) {
+      var li = document.createElement('li');
+      var t = document.createElement('span');
+      t.className = 'event-time';
+      t.textContent = timeText(ev.at);
+      var w = document.createElement('span');
+      w.className = 'event-who';
+      w.textContent = ev.who;
+      var a = document.createElement('span');
+      a.textContent = ev.action + (ev.ok ? '' : ' (실패: ' + (ev.error || '') + ')');
+      if (!ev.ok) a.className = 'event-fail';
+      li.appendChild(t);
+      li.appendChild(w);
+      li.appendChild(a);
+      el.appendChild(li);
+    });
+  }
+
   // llama-server 상태와 최근 로그. 모델이 안 올라올 때 이유가 여기 찍힌다.
   function usageServer() {
     return window.api.usage.server().then(function (r) {
@@ -479,6 +509,7 @@
         ['상태', st.state === 'ready' ? '준비됨' : st.state === 'starting' ? '올라오는 중' : st.state === 'error' ? '오류: ' + (st.error || '') : st.state === 'stopped' ? '멈춤' : (r.error || '모름')],
         ['모델', models.length ? models.join(', ') : '없음']
       ]);
+      eventsRender('#usage-events', r.events);
       var el = $('#usage-server-log');
       el.textContent = (r.logs || []).join('\n');
       el.scrollTop = el.scrollHeight;

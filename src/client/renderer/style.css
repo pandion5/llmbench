@@ -216,6 +216,14 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .msg-error { align-self: flex-start; background: #2a1c1c; border: 1px solid #5f2f2f; }
 
 /* 기록 한 줄을 누르면 질문과 답을 펼친다. */
+/* 누가 서버를 켜고 끄고 업데이트했는지. 시각, 이름, 한 일 순서다. */
+.events { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.events li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.events li:last-child { border-bottom: 0; }
+.event-time { color: var(--fg-dim); font-variant-numeric: tabular-nums; min-width: 64px; }
+.event-who { min-width: 80px; }
+.event-fail { color: #e0868a; }
+
 .log-row { cursor: pointer; }
 .log-row:hover td { background: var(--bg-3); }
 .log-row.is-open td { background: var(--bg-3); }
@@ -263,3 +271,6 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
   background: #0f1115;
 }
 #term-host .xterm { height: 100%; }
+
+/* 카드 안의 작은 제목. 표 아래에 목록을 나눌 때 쓴다. */
+h3.sub { font-size: 13px; font-weight: 500; color: var(--fg-dim); margin: 14px 0 0; }

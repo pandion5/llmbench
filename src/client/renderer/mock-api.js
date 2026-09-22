@@ -89,7 +89,11 @@
       server: function () {
         return Promise.resolve({
           status: { state: 'ready', models: [{ id: 'qwen38', loaded: true }, { id: 'qwen36', loaded: false }] },
-          logs: ['srv  info: loading model qwen38', 'srv  info: model loaded in 84.2s', 'srv  info: listening on 127.0.0.1:8081']
+          logs: ['srv  info: loading model qwen38', 'srv  info: model loaded in 84.2s', 'srv  info: listening on 127.0.0.1:8081'],
+          events: [
+            { at: new Date().toISOString(), who: '박영범', address: '10.66.0.2', action: '서버 켜기', ok: true, error: null },
+            { at: new Date(Date.now() - 3600000).toISOString(), who: '노트북', address: '10.66.0.3', action: '서버 끄기', ok: false, error: '서버가 이미 꺼져 있다' }
+          ]
         });
       },
       serverStart: function () { return Promise.resolve({ ok: true }); },
