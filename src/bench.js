@@ -314,11 +314,102 @@ async function runTuning(opts, cfg) {
   return lastResult;
 }
 
+// CPU에 두는 전문가 층 수를 바꿔 가며 프롬프트 처리와 생성 속도를 잰다.
+// 층을 VRAM으로 내릴수록 빨라지다가 어느 지점에서 메모리가 모자라 실패한다.
+// 그 직전 값이 쓸 수 있는 가장 낮은 값이다. 실패한 뒤로는 더 내려가지 않는다.
+async function runNcmoe(opts, cfg) {
+  const modelKey = (opts && opts.model) || 'qwen38';
+  const paths = await install.modelPaths(cfg);
+  const target = paths[modelKey];
+  if (!target || !target.file) throw new Error(`${modelKey} 모델 파일이 없음. 설치 탭에서 먼저 받는다.`);
+  const exe = path.join(cfg.installDir, 'bin', 'llama-bench.exe');
+  if (!fs.existsSync(exe)) throw new Error(`llama-bench.exe 없음: ${exe}`);
+  const hw = await sys.getHwInfo(cfg.installDir);
+
+  // 3.8은 48층이라 48 이상은 전부 CPU다. 거기서부터 4층씩 내린다.
+  const start = Math.min(Number(target.ncmoe) || 48, 48);
+  const values = [];
+  for (let v = start; v >= 0 && values.length < 6; v -= 4) values.push(v);
+
+  if (server.status().state !== 'stopped') {
+    emit({ promptIdx: 0, total: values.length, tokens: 0, tokPerSec: 0, text: 'llama-server를 내리는 중 (RAM 확보)\n' });
+    server.stop();
+  }
+
+  const t0 = Date.now();
+  const rows = [];
+  let progressLog = '';
+  for (const v of values) {
+    const head = `CPU 전문가 층 ${v} 측정 중 (${rows.length + 1}/${values.length})\n`;
+    const buildArgs = () => [
+      '-m', target.file,
+      '-p', String(PP), '-n', String(TG), '-r', '2',
+      '-t', String(cfg.threads), '--poll', String(cfg.poll),
+      ...(cfg.cpuMask ? ['-C', cfg.cpuMask] : []),
+      '-ngl', '99', '-ncmoe', String(v),
+      '-fa', 'on', '-ctk', 'q8_0', '-ctv', 'q8_0',
+      ...loadModeArgs(exe, cfg.loadMode),
+      '-o', 'jsonl'
+    ];
+    try {
+      const { out } = await runBenchExe(exe, buildArgs, (o, l) => {
+        emit({ promptIdx: rows.length, total: values.length, tokens: 0, tokPerSec: 0, text: progressLog + head + l });
+      });
+      const parsed = parseJsonl(out);
+      const pp = parsed.find((r) => r.n_prompt === PP && r.n_gen === 0);
+      const tg = parsed.find((r) => r.n_gen === TG && r.n_prompt === 0);
+      if (!pp || !tg) throw new Error('결과를 해석하지 못함');
+      rows.push({ ncmoe: v, ok: true, pp512: round(pp.avg_ts, 1), tg128: round(tg.avg_ts, 2), error: null });
+      progressLog += `층 ${v}: pp512 ${round(pp.avg_ts, 1)} tok/s, tg128 ${round(tg.avg_ts, 2)} tok/s\n`;
+    } catch (e) {
+      const tail = String(e.message || '').split('\n').slice(-3).join(' ').slice(-200);
+      rows.push({ ncmoe: v, ok: false, pp512: null, tg128: null, error: tail });
+      progressLog += `층 ${v}: 실패. 여기서 멈춘다.\n`;
+      emit({ promptIdx: rows.length, total: values.length, tokens: 0, tokPerSec: 0, text: progressLog });
+      break;
+    }
+  }
+  const seconds = (Date.now() - t0) / 1000;
+  const okRows = rows.filter((r) => r.ok);
+  if (!okRows.length) throw new Error(`한 값도 재지 못함: ${rows[0] && rows[0].error}`);
+  // 프롬프트 처리가 하네스 체감을 좌우한다. 그 기준으로 고른다.
+  const best = okRows.slice().sort((a, b) => b.pp512 - a.pp512)[0];
+  const current = okRows.find((r) => r.ncmoe === Math.min(Number(target.ncmoe) || 48, 48)) || null;
+
+  lastResult = {
+    mode: 'ncmoe',
+    model: modelKey,
+    runs: [],
+    summary: {
+      avgPromptTokPerSec: best.pp512,
+      avgGenTokPerSec: best.tg128,
+      avgPowerW: 0,
+      totalWh: 0,
+      krw: 0,
+      krwPer1kTokens: 0
+    },
+    ncmoe: {
+      gguf: path.basename(target.file),
+      current: target.ncmoe,
+      rows,
+      best: { ncmoe: best.ncmoe, pp512: best.pp512, tg128: best.tg128 },
+      currentPp512: current ? current.pp512 : null,
+      currentTg128: current ? current.tg128 : null,
+      seconds: round(seconds, 1)
+    },
+    hw,
+    ts: Date.now()
+  };
+  emit({ promptIdx: values.length, total: values.length, tokens: 0, tokPerSec: 0, text: progressLog + '끝.\n' });
+  return lastResult;
+}
+
 async function run(opts, cfg) {
   if (controller || benchChild) throw new Error('벤치마크가 이미 돌고 있음');
   // mode 'standard'면 llama-bench, 아니면 서버에 프롬프트를 보내는 체감 벤치
   if (opts && opts.mode === 'standard') return runStandard(opts, cfg);
   if (opts && opts.mode === 'tuning') return runTuning(opts, cfg);
+  if (opts && opts.mode === 'ncmoe') return runNcmoe(opts, cfg);
   const prompts = opts && Array.isArray(opts.prompts) && opts.prompts.length ? opts.prompts : BUILTIN_PROMPTS;
   const model = (opts && opts.model) || '';
   const baseUrl = (opts && opts.baseUrl) || server.BASE_URL;

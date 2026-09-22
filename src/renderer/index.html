@@ -230,6 +230,7 @@
         <label><input type="radio" name="bench-mode" value="standard" checked> 표준 (llama-bench pp512 / tg128, 다른 PC와 비교용)</label>
         <label><input type="radio" name="bench-mode" value="prompts"> 체감 (서버에 프롬프트 3종)</label>
         <label><input type="radio" name="bench-mode" value="tuning"> 튜닝 (스레드 × poll × CPU 마스크 조합, tg128만)</label>
+        <label><input type="radio" name="bench-mode" value="ncmoe"> CPU 전문가 층 (48부터 4씩 내리며 pp512와 tg128, VRAM이 모자라면 멈춤)</label>
       </div>
       <p class="hint">표준 벤치는 모델을 직접 올리므로 실행 중인 llama-server를 먼저 내린다. 3.8 기준 로드 포함 몇 분 걸린다.</p>
       <div class="row">
@@ -282,6 +283,23 @@
           <span class="hint" id="tuning-apply-msg" aria-live="polite"></span>
         </div>
         <p class="hint">적용 뒤 설치 탭에서 설치를 다시 실행하면 models.ini에 반영된다. 다운로드는 건너뛴다.</p>
+      </div>
+
+      <div class="card" id="bench-ncmoe-card" hidden>
+        <h2>CPU 전문가 층 결과</h2>
+        <p class="hint" id="ncmoe-note"></p>
+        <table class="grid">
+          <caption class="sr-only">층 수별 결과</caption>
+          <thead>
+            <tr><th scope="col">CPU에 둔 층</th><th scope="col">pp512 tok/s</th><th scope="col">tg128 tok/s</th><th scope="col">비고</th></tr>
+          </thead>
+          <tbody id="ncmoe-rows"></tbody>
+        </table>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="ncmoe-apply">프롬프트가 가장 빠른 값을 설정에 적용</button>
+          <span class="hint" id="ncmoe-apply-msg" aria-live="polite"></span>
+        </div>
+        <p class="hint">적용 뒤 설치 탭에서 설치를 다시 실행하면 models.ini에 반영된다. 다운로드는 건너뛴다. 실패한 값은 VRAM이 모자란 것이니 그 위 값까지만 쓸 수 있다.</p>
       </div>
 
       <table class="grid" id="bench-table" hidden>

@@ -744,15 +744,43 @@
     $('#bench-tuning-card').hidden = false;
   }
 
+  function renderNcmoe(result) {
+    var t = result.ncmoe;
+    var tbody = $('#ncmoe-rows');
+    tbody.textContent = '';
+    t.rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.ok && r.ncmoe === t.best.ncmoe) tr.className = 'row-best';
+      var note = !r.ok ? '실패. VRAM이 모자란 것으로 본다' : (r.ncmoe === Math.min(t.current, 48) ? '지금 설정' : '');
+      [String(r.ncmoe), r.ok ? num(r.pp512, 1) : '-', r.ok ? num(r.tg128, 2) : '-', note].forEach(function (text, j) {
+        var cell = document.createElement(j === 0 ? 'th' : 'td');
+        if (j === 0) cell.scope = 'row';
+        cell.textContent = text;
+        tr.appendChild(cell);
+      });
+      tbody.appendChild(tr);
+    });
+    var note = t.gguf + ' · ' + t.rows.length + '개 값 ' + num(t.seconds, 0) + '초. ';
+    note += '프롬프트가 가장 빠른 값: 층 ' + t.best.ncmoe + ' → pp512 ' + num(t.best.pp512, 1) + ', tg128 ' + num(t.best.tg128, 2);
+    if (t.currentPp512) {
+      note += ' (지금 설정 pp512 ' + num(t.currentPp512, 1) + ', ' + num((t.best.pp512 / t.currentPp512 - 1) * 100, 0) + '% 차이)';
+    }
+    setText('#ncmoe-note', note);
+    setText('#ncmoe-apply-msg', '');
+    $('#bench-ncmoe-card').hidden = false;
+  }
+
   function renderBenchResult(result) {
     state.benchResult = result;
     $('#bench-tuning-card').hidden = result.mode !== 'tuning';
+    $('#bench-ncmoe-card').hidden = result.mode !== 'ncmoe';
     $('#bench-answers-card').hidden = true;
     $('#bench-verdict-card').hidden = true;
-    if (result.mode === 'tuning') {
+    if (result.mode === 'tuning' || result.mode === 'ncmoe') {
       $('#bench-table').hidden = true;
       $('#bench-summary-card').hidden = true;
-      renderTuning(result);
+      if (result.mode === 'tuning') renderTuning(result);
+      else renderNcmoe(result);
       return;
     }
 
@@ -958,6 +986,22 @@
   $('#bench-cancel').addEventListener('click', function () {
     window.api.bench.cancel();
     setText('#bench-msg', '취소를 요청했다.');
+  });
+
+  $('#ncmoe-apply').addEventListener('click', function () {
+    var r = state.benchResult;
+    if (!r || r.mode !== 'ncmoe') return;
+    if (r.model !== 'qwen38') {
+      setText('#ncmoe-apply-msg', '3.6의 층 수는 설정에 없다. 3.8만 적용된다.');
+      return;
+    }
+    var v = r.ncmoe.best.ncmoe;
+    window.api.config.set({ ncmoe38: v }).then(function (cfg) {
+      fillConfigForm(cfg);
+      setText('#ncmoe-apply-msg', 'CPU 전문가 층 ' + v + '으로 저장했다. 설치 탭에서 설치를 다시 실행해 반영한다.');
+    }).catch(function (err) {
+      setText('#ncmoe-apply-msg', '저장 실패: ' + (err && err.message ? err.message : String(err)));
+    });
   });
 
   $('#tuning-apply').addEventListener('click', function () {
