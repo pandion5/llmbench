@@ -328,6 +328,16 @@
 
   var WORKDIR_KEY = 'llmbench.harness.workdir';
 
+  // 작업 폴더가 비어 있으면 고르기 창을 띄우고 고른 값을 칸에 넣는다.
+  function ensureWorkDir() {
+    var dir = $('#harness-workdir').value.trim();
+    if (dir) return Promise.resolve(dir);
+    return window.api.shell.pickDir().then(function (picked) {
+      if (picked) $('#harness-workdir').value = picked;
+      return picked || '';
+    });
+  }
+
   function harnessOptions() {
     var dir = $('#harness-workdir').value.trim();
     // 마지막에 쓴 폴더를 기억한다. 매번 고르지 않게.
@@ -370,13 +380,21 @@
         btn.addEventListener('click', function () {
           btn.disabled = true;
           if (h.installed) {
-            window.api.harness.launch(h.id, harnessOptions()).then(function (res) {
-              if (res && res.ok) {
-                setText('#harness-msg', h.name + ' 터미널을 열었다.');
-                termOpen(res.term || h.id, h.name);
-              } else {
-                setText('#harness-msg', (res && res.error) || '열지 못했다.');
+            // 작업 폴더를 안 고르면 하네스가 홈에서 시작한다. 그 전에 고르게 한다.
+            ensureWorkDir().then(function (dir) {
+              if (!dir) {
+                setText('#harness-msg', '작업 폴더를 골라야 연다.');
+                btn.disabled = false;
+                return;
               }
+              return window.api.harness.launch(h.id, harnessOptions()).then(function (res) {
+                if (res && res.ok) {
+                  setText('#harness-msg', h.name + ' 터미널을 열었다.');
+                  termOpen(res.term || h.id, h.name);
+                } else {
+                  setText('#harness-msg', (res && res.error) || '열지 못했다.');
+                }
+              });
             }).catch(function (err) {
               setText('#harness-msg', '열지 못했다: ' + errText(err));
             }).then(function () { btn.disabled = false; });
