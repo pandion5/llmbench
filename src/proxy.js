@@ -89,6 +89,8 @@ function view(j) {
     runMs: j.startedAt ? (j.endedAt || Date.now()) - j.startedAt : 0,
     promptChars: j.prompt ? j.prompt.length : 0,
     answerChars: j.answer ? j.answer.length : 0,
+    reasoningChars: j.reasoning ? j.reasoning.length : 0,
+    toolCalls: j.tools ? j.tools.length : 0,
     tokens: j.tokens || 0,
     promptTokens: j.promptTokens || 0,
     promptMs: j.promptMs || 0,
@@ -140,7 +142,9 @@ async function writeLog(job) {
     canceled: !!job.canceled,
     error: job.error || null,
     prompt: job.prompt || '',
-    answer: job.answer || ''
+    answer: job.answer || '',
+    reasoning: job.reasoning || '',
+    tools: (job.tools || []).map((t) => ({ name: t.name, args: t.args }))
   };
   try {
     await fsp.mkdir(opts.logDir, { recursive: true });
@@ -211,13 +215,9 @@ function textOf(content) {
 }
 
 // 스트리밍 조각에서 답 글자를 모은다. 생각 과정은 답과 나눠 둔다.
+// 토큰 수와 걸린 시간이 실린 마지막 조각은 choices가 빈 배열로 오니
+// choices를 보기 전에 먼저 챙긴다.
 function collectDelta(json, job) {
-  const c = json.choices && json.choices[0];
-  if (!c) return;
-  const d = c.delta || c.message || {};
-  if (typeof d.content === 'string') job.answer += d.content;
-  if (typeof d.reasoning_content === 'string') job.reasoning += d.reasoning_content;
-  if (typeof c.text === 'string') job.answer += c.text;
   if (json.usage && json.usage.completion_tokens) job.tokens = json.usage.completion_tokens;
   if (json.usage && json.usage.prompt_tokens) job.promptTokens = json.usage.prompt_tokens;
   // llama.cpp는 마지막 조각에 걸린 시간을 나눠서 준다. 프롬프트를 읽는 데 쓴 시간과
@@ -227,6 +227,23 @@ function collectDelta(json, job) {
     job.genMs = Math.round(json.timings.predicted_ms || 0);
     if (json.timings.prompt_n) job.promptTokens = json.timings.prompt_n;
     if (json.timings.predicted_n) job.tokens = json.timings.predicted_n;
+  }
+
+  const c = json.choices && json.choices[0];
+  if (!c) return;
+  const d = c.delta || c.message || {};
+  if (typeof d.content === 'string') job.answer += d.content;
+  if (typeof d.reasoning_content === 'string') job.reasoning += d.reasoning_content;
+  if (typeof c.text === 'string') job.answer += c.text;
+  // 하네스는 글 대신 도구 호출로 답하는 일이 많다. 이름과 인자를 순서대로 모은다.
+  if (Array.isArray(d.tool_calls)) {
+    for (const tc of d.tool_calls) {
+      const idx = Number.isInteger(tc.index) ? tc.index : job.tools.length;
+      while (job.tools.length <= idx) job.tools.push({ name: '', args: '' });
+      const f = tc.function || {};
+      if (typeof f.name === 'string') job.tools[idx].name += f.name;
+      if (typeof f.arguments === 'string') job.tools[idx].args += f.arguments;
+    }
   }
 }
 
@@ -482,6 +499,7 @@ async function handle(req, res) {
     prompt: promptOf(body),
     answer: '',
     reasoning: '',
+    tools: [],
     tokens: 0,
     promptTokens: 0,
     promptMs: 0,

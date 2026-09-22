@@ -1323,7 +1323,15 @@
     t.textContent = parts.join(' · ');
     box.appendChild(t);
 
-    [['질문', row.prompt], ['답', row.answer]].forEach(function (pair) {
+    var sections = [['질문', row.prompt]];
+    if (row.tools && row.tools.length) {
+      sections.push(['도구 호출 ' + row.tools.length + '건', row.tools.map(function (t) {
+        return t.name + '(' + cut(t.args, 300) + ')';
+      }).join('\n')]);
+    }
+    if (row.reasoning) sections.push(['생각 과정', row.reasoning]);
+    sections.push(['답', row.answer]);
+    sections.forEach(function (pair) {
       var h = document.createElement('div');
       h.className = 'log-detail-head';
       h.textContent = pair[0];
@@ -1364,7 +1372,8 @@
       tr.className = 'log-row';
       var genMs = row.genMs || row.runMs;
       var speed = genMs > 0 && row.tokens ? (Math.round((row.tokens / (genMs / 1000)) * 10) / 10) + ' tok/s' : '-';
-      [timeText(row.at), row.who, row.model || '기본', cut(row.prompt, 48), String(row.tokens || 0), speed]
+      var shown = cut(row.prompt, 48) || (row.tools && row.tools.length ? '(도구 결과를 이어 보냄)' : '');
+      [timeText(row.at), row.who, row.model || '기본', shown, String(row.tokens || 0), speed]
         .forEach(function (v) {
           var td = document.createElement('td');
           td.textContent = v;

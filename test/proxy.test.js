@@ -24,11 +24,14 @@ function fakeUpstream(delayMs) {
       const timer = setInterval(() => {
         if (i >= parts.length) {
           clearInterval(timer);
-          res.write('data: {"choices":[{"delta":{}}],"usage":{"completion_tokens":3,"prompt_tokens":11},"timings":{"prompt_n":11,"prompt_ms":220,"predicted_n":3,"predicted_ms":60}}\n\n');
+          res.write('data: {"choices":[],"usage":{"completion_tokens":3,"prompt_tokens":11},"timings":{"prompt_n":11,"prompt_ms":220,"predicted_n":3,"predicted_ms":60}}\n\n');
           res.write('data: [DONE]\n\n');
           res.end();
           return;
         }
+        // 첫 조각은 도구 호출로 시작한다. 하네스가 이렇게 보낸다.
+        if (i === 0) res.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read_","arguments":"{\\"path\\":"}}]}}]}\n\n');
+        if (i === 0) res.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"file","arguments":"\\"a.js\\"}"}}]}}]}\n\n');
         res.write(`data: {"choices":[{"delta":{"content":"${parts[i]}"}}]}\n\n`);
         i += 1;
       }, delayMs);
@@ -112,6 +115,9 @@ function listen(server, port) {
   assert.strictEqual(rows[0].promptTokens, 11, String(rows[0].promptTokens));
   assert.strictEqual(rows[0].promptMs, 220, String(rows[0].promptMs));
   assert.strictEqual(rows[0].genMs, 60, String(rows[0].genMs));
+  assert.strictEqual(rows[0].tools.length, 1, JSON.stringify(rows[0].tools));
+  assert.strictEqual(rows[0].tools[0].name, 'read_file');
+  assert.strictEqual(rows[0].tools[0].args, '{"path":"a.js"}', rows[0].tools[0].args);
   // 스트리밍 요청에는 프록시가 usage 옵션을 붙여 보낸다.
   assert.ok(up.seen[0].body.includes('include_usage'), up.seen[0].body);
   assert.strictEqual(rows[0].who, '이 PC', rows[0].who);
