@@ -11,6 +11,7 @@ const sys = require('./sys');
 const config = require('./config');
 const install = require('./install');
 const server = require('./server');
+const proxy = require('./proxy');
 const bench = require('./bench');
 const harness = require('./harness');
 const update = require('./update');
@@ -277,13 +278,36 @@ function registerIpc() {
   ipcMain.handle('install:cancel', () => install.cancel());
   ipcMain.handle('install:status', () => install.status());
 
+  // llama-server는 안쪽 포트에서만 듣고, 바깥에서 오는 요청은 프록시가 받는다.
+  // 프록시가 누가 무엇을 물었는지 남기고 줄을 세운다.
+  async function startProxy() {
+    const cfg = await config.get();
+    return proxy.start({
+      upstream: server.BASE_URL,
+      apiKey: await wireguard.apiKey(),
+      logDir: path.join(cfg.installDir, 'logs', 'chat'),
+      peers: (await wireguard.info()).peers,
+      limit: Math.max(1, Number(cfg.slots) || 1),
+      share: await wireguard.serve()
+    });
+  }
+
   ipcMain.handle('server:start', async () => {
-    // 공유를 켜 뒀으면 모든 주소에서 받고 API 키를 건다. 설정은 파일에 있어서
-    // 어느 화면에서 시작하든, 앱을 다시 켠 뒤에도 같게 동작한다.
-    const share = (await wireguard.serve()) ? { apiKey: await wireguard.apiKey() } : null;
-    return server.start(await config.get(), { share });
+    const cfg = await config.get();
+    const r = await server.start(cfg, { apiKey: await wireguard.apiKey() });
+    await startProxy();
+    return r;
   });
-  ipcMain.handle('server:stop', () => server.stop());
+
+  ipcMain.handle('proxy:status', () => proxy.status());
+  ipcMain.handle('proxy:restart', () => startProxy());
+  ipcMain.handle('proxy:logDays', () => proxy.logDays());
+  ipcMain.handle('proxy:log', (_e, day) => proxy.readLog(day));
+
+  ipcMain.handle('server:stop', () => {
+    proxy.stop();
+    return server.stop();
+  });
   ipcMain.handle('server:status', () => server.refresh());
   ipcMain.handle('server:logs', () => server.logs());
   ipcMain.handle('server:saveLogs', () =>
@@ -375,6 +399,7 @@ function registerIpc() {
 
   install.onProgress((s) => broadcast('install:progress', s));
   server.onStatus((s) => broadcast('server:status', s));
+  proxy.onEvent((s) => broadcast('proxy:status', s));
   bench.onProgress((p) => broadcast('bench:progress', p));
   harness.onLog((line) => broadcast('harness:log', line));
   update.onProgress((p) => broadcast('update:progress', p));
@@ -428,5 +453,6 @@ app.on('before-quit', () => {
   if (monitorTimer) clearInterval(monitorTimer);
   install.cancel();
   terminal.killAll();
+  proxy.stop();
   server.stop();
 });

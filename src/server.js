@@ -7,16 +7,15 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const HOST = '127.0.0.1';
-const PORT = 8080;
+// llama-server가 실제로 듣는 포트. 바깥에는 안 연다. 8080은 프록시가 받는다.
+const PORT = 8081;
 const BASE_URL = `http://${HOST}:${PORT}`;
-// 공유를 켜면 모든 주소에서 받는다. 대신 API 키를 걸고 방화벽으로 막는다.
-const SHARE_HOST = '0.0.0.0';
 const READY_TIMEOUT_MS = 15 * 60 * 1000; // 두 모델을 RAM에 올리는 데 몇 분 걸린다
 const LOG_MAX = 200;
 
-// shared는 마지막으로 띄울 때 모든 주소에서 받게 했는지다. 화면에서 원인을 좁힐 때 쓴다.
 const state = { state: 'stopped', pid: null, models: [], error: null, shared: false };
-// 공유를 켜고 띄웠으면 이 키가 요청마다 필요하다.
+// 프록시와 이 앱이 llama-server에 붙을 때 쓰는 키. 안쪽 포트를 다른 프로그램이
+// 몰래 쓰지 못하게 걸어 둔다.
 let currentApiKey = null;
 
 function authHeaders() {
@@ -116,11 +115,10 @@ function killTree(p) {
 }
 
 async function start(cfg, opts) {
-  const share = opts && opts.share;
+  const apiKey = (opts && opts.apiKey) || null;
   if (child && child.exitCode === null) {
-    // 이미 떠 있는 서버는 인자를 바꿀 수 없다. 공유 설정이 달라졌으면 끄고 다시 띄운다.
-    const same = !!share === state.shared && (!share || share.apiKey === currentApiKey);
-    if (same) return status();
+    // 이미 떠 있는 서버는 인자를 바꿀 수 없다. 키가 달라졌으면 끄고 다시 띄운다.
+    if (apiKey === currentApiKey) return status();
     stop();
     // 포트를 놓는 데 잠깐 걸린다. 그 사이에 준비 검사를 하면 죽은 서버를 살아 있다고 본다.
     for (let i = 0; i < 20 && (await health()); i++) {
@@ -145,24 +143,17 @@ async function start(cfg, opts) {
   logBuf.length = 0;
   emit();
 
+  // 슬롯 수만큼 동시에 받는다. 컨텍스트는 슬롯 수로 나뉜다.
+  const slots = Math.max(1, Number(cfg.slots) || 1);
   const args = [
     '--models-preset', preset, '--models-max', '2',
-    '--host', share ? SHARE_HOST : HOST,
-    '--port', String(PORT)
+    '--host', HOST, '--port', String(PORT),
+    '--parallel', String(slots),
+    // 프록시 화면에서 슬롯과 처리 속도를 읽으려면 이 둘이 켜져 있어야 한다.
+    '--slots', '--metrics'
   ];
-  // 키 없이 모든 주소에 열면 같은 네트워크 누구나 쓸 수 있다. 그건 막는다.
-  if (share && !share.apiKey) {
-    Object.assign(state, {
-      state: 'error',
-      pid: null,
-      models: [],
-      error: 'API 키가 없어 터널에 열지 않았다. 공유 탭에서 터널을 한 번 시작해 키를 만든다.'
-    });
-    emit();
-    return status();
-  }
-  currentApiKey = share && share.apiKey ? share.apiKey : null;
-  state.shared = !!share;
+  currentApiKey = apiKey;
+  state.shared = false;
   if (currentApiKey) args.push('--api-key', currentApiKey);
   child = spawn(exe, args, { cwd: path.dirname(exe), windowsHide: true });
   pipeLines(child.stdout);

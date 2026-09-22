@@ -613,6 +613,29 @@
     shell: {
       openPath: function (p) { console.log('[mock] openPath', p); return Promise.resolve(); }
     },
+    proxy: {
+      status: function () {
+        return Promise.resolve({
+          listening: true, error: null, host: '0.0.0.0', port: 8080,
+          upstream: 'http://127.0.0.1:8081', limit: 1,
+          running: [{ id: 3, who: '박영범', address: '10.66.0.2', model: 'qwen38', waitMs: 0, runMs: 4200, tokens: 81 }],
+          waiting: [{ id: 4, who: '노트북', address: '10.66.0.3', model: 'qwen38', waitMs: 3100, runMs: 0, tokens: 0 }],
+          recent: []
+        });
+      },
+      restart: function () { return Promise.resolve({ listening: true }); },
+      logDays: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
+      log: function () {
+        return Promise.resolve([
+          { at: new Date().toISOString(), who: '이 PC', address: '127.0.0.1', model: 'qwen36',
+            waitMs: 0, runMs: 16200, tokens: 60, canceled: false, error: null,
+            prompt: '한국에서 제일 높은 산은?', answer: '백두산이 2744m로 가장 높다.' },
+          { at: new Date().toISOString(), who: '박영범', address: '10.66.0.2', model: 'qwen38',
+            waitMs: 2400, runMs: 88000, tokens: 1024, canceled: false, error: null,
+            prompt: 'src/wireguard.js를 읽고 다섯 줄로 정리해줘', answer: '터널 서비스를 올리고 내린다. 피어를 만든다.' }
+        ]);
+      }
+    },
     app: {
       isAdmin: function () { return Promise.resolve(false); },
       version: function () { return Promise.resolve('0.2.0'); },

@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld('api', {
   shell: {
     openPath: (p) => call('shell:openPath', p)
   },
+  proxy: {
+    status: () => call('proxy:status'),
+    restart: () => call('proxy:restart'),
+    logDays: () => call('proxy:logDays'),
+    log: (day) => call('proxy:log', day)
+  },
   app: {
     isAdmin: () => call('app:isAdmin'),
     version: () => call('app:version'),

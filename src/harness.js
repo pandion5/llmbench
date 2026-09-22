@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const sys = require('./sys');
 const terminal = require('./terminal');
 const server = require('./server');
+const proxy = require('./proxy');
 const config = require('./config');
 
 // npm 전역 설치본은 .cmd 래퍼라 Node 22에서 shell 없이 spawn하면 EINVAL이 난다.
@@ -48,7 +49,8 @@ const DEFS = [
 // 기본 하네스. 화면에서 따로 안 고르면 이걸 쓴다.
 const DEFAULT_HARNESS = 'openclaude';
 
-const BASE_URL = `${server.BASE_URL}/v1`;
+// 하네스도 프록시를 거친다. 그래야 기록이 남고 같은 줄에 선다.
+const BASE_URL = `http://127.0.0.1:${proxy.PORT}/v1`;
 // 공유를 켜면 llama-server에 키가 걸린다. 그때는 그 키를 넘겨야 한다.
 const API_KEY = 'local';
 

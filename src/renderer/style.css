@@ -244,6 +244,31 @@ main { padding: 16px; max-width: 1100px; }
   color: var(--fg-dim);
 }
 .form-group:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
+/* 기록 한 줄을 누르면 질문과 답을 펼친다. */
+.log-row { cursor: pointer; }
+.log-row:hover td { background: var(--bg-3); }
+.log-row.is-open td { background: var(--bg-3); }
+.log-detail {
+  padding: 10px 12px 12px;
+  border-left: 1px solid var(--accent);
+  background: var(--bg);
+}
+.log-detail-head {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 8px;
+}
+.log-detail-head:first-child { margin-top: 0; }
+.log-detail-body {
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .form-check { display: flex; align-items: center; }
 .form .form-check input { width: auto; margin: 0; }
 

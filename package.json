@@ -1,13 +1,13 @@
 {
   "name": "llmbench",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "로컬 LLM(llama.cpp router) 점검, 설치, 모니터, 벤치마크 도구",
   "main": "src/entry.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "release": "node scripts/release.js",
-    "test": "node test/bench-retry.test.js",
+    "test": "node test/bench-retry.test.js && node test/proxy.test.js",
     "start:client": "set LLMBENCH_ROLE=client&& electron ."
   },
   "build": {

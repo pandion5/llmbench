@@ -51,7 +51,10 @@ function defaults(cores) {
     // llama-server --poll (0~100). 튜닝 벤치로 고른 값을 넣는다. 50이 llama.cpp 기본값.
     poll: 50,
     // llama-server --cpu-mask. 빈 문자열이면 안 준다. 튜닝 벤치가 P코어 마스크(예: 0xFFFF)를 찾아 준다.
-    cpuMask: ''
+    cpuMask: '',
+    // 한 번에 몇 명을 동시에 받을지. 컨텍스트가 이 수로 나뉜다.
+    // 넘치는 요청은 프록시가 줄을 세운다.
+    slots: 1
   };
 }
 

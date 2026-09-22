@@ -17,6 +17,7 @@
       <button type="button" class="tab" role="tab" id="tab-bench" data-tab="bench" aria-selected="false" aria-controls="panel-bench">벤치마크</button>
       <button type="button" class="tab" role="tab" id="tab-harness" data-tab="harness" aria-selected="false" aria-controls="panel-harness">하네스</button>
       <button type="button" class="tab" role="tab" id="tab-share" data-tab="share" aria-selected="false" aria-controls="panel-share">공유</button>
+      <button type="button" class="tab" role="tab" id="tab-usage" data-tab="usage" aria-selected="false" aria-controls="panel-usage">사용 기록</button>
     </nav>
     <div class="topbar-status">
       <span id="version-badge" class="badge" title="현재 버전"></span>
@@ -85,6 +86,9 @@
 
           <label for="cfg-ctx">컨텍스트 길이</label>
           <input type="number" id="cfg-ctx" name="ctx" min="2048" max="1048576" step="1024">
+
+          <label for="cfg-slots">동시에 받는 수</label>
+          <input type="number" id="cfg-slots" name="slots" min="1" max="8" step="1" title="한 번에 처리할 요청 수. 컨텍스트 길이가 이 수로 나뉜다. 넘치는 요청은 줄을 선다.">
 
           <label for="cfg-autoLoad36">3.6 같이 올리기</label>
           <span class="form-check"><input type="checkbox" id="cfg-autoLoad36" name="autoLoad36" title="서버 시작 때 Qwen3.6도 올린다. RAM이 두 모델 합계보다 작으면 끈다."></span>
@@ -401,6 +405,37 @@
       <div class="card">
         <h2>기기에서 쓰는 법</h2>
         <dl class="kv" id="share-howto"></dl>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden>
+      <p class="hint">클라이언트와 하네스가 보낸 요청이 모두 이 앱을 거친다. 누가 무엇을 물었고 무슨 답을 받았는지 날짜별 파일에 남는다.</p>
+
+      <div class="card">
+        <h2>지금</h2>
+        <dl class="kv" id="usage-kv"></dl>
+        <table class="grid">
+          <thead>
+            <tr><th scope="col">상태</th><th scope="col">보낸 사람</th><th scope="col">모델</th><th scope="col">기다린 시간</th><th scope="col">걸린 시간</th><th scope="col">토큰</th></tr>
+          </thead>
+          <tbody id="usage-now"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>기록</h2>
+        <div class="row">
+          <label for="usage-day">날짜</label>
+          <select id="usage-day"></select>
+          <button type="button" class="btn btn-sm" id="usage-reload">새로 읽기</button>
+          <span class="hint" id="usage-msg" aria-live="polite"></span>
+        </div>
+        <table class="grid">
+          <thead>
+            <tr><th scope="col">시각</th><th scope="col">보낸 사람</th><th scope="col">모델</th><th scope="col">질문</th><th scope="col">토큰</th><th scope="col">속도</th></tr>
+          </thead>
+          <tbody id="usage-rows"></tbody>
+        </table>
       </div>
     </section>
 

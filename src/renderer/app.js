@@ -75,7 +75,8 @@
     dashboard: { mount: mountDashboard },
     bench: { mount: mountBench },
     harness: { mount: mountHarness },
-    share: { mount: mountShare }
+    share: { mount: mountShare },
+    usage: { mount: mountUsage }
   };
 
   var currentTab = null;
@@ -282,6 +283,7 @@
     $('#cfg-quant').value = cfg.quant;
     $('#cfg-threads').value = cfg.threads;
     $('#cfg-ctx').value = cfg.ctx;
+    $('#cfg-slots').value = cfg.slots || 1;
     $('#cfg-kwhPrice').value = cfg.kwhPrice;
     $('#cfg-autoLoad36').checked = cfg.autoLoad36 !== false;
     $('#cfg-mtp').checked = cfg.mtp === true;
@@ -322,6 +324,7 @@
       quant: $('#cfg-quant').value,
       threads: Number($('#cfg-threads').value),
       ctx: Number($('#cfg-ctx').value),
+      slots: Number($('#cfg-slots').value) || 1,
       kwhPrice: Number($('#cfg-kwhPrice').value),
       autoLoad36: $('#cfg-autoLoad36').checked,
       mtp: $('#cfg-mtp').checked,
@@ -1202,6 +1205,173 @@
       ['모델 이름', 'qwen38 또는 qwen36'],
       ['확인', base + '/health']
     ]);
+  }
+
+  // ---------- 사용 기록 ----------
+
+  function msText(ms) {
+    if (!ms) return '0초';
+    if (ms < 1000) return ms + 'ms';
+    return (Math.round(ms / 100) / 10) + '초';
+  }
+
+  function timeText(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso || '');
+    return String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0') + ':' +
+      String(d.getSeconds()).padStart(2, '0');
+  }
+
+  function cut(text, n) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    return t.length > n ? t.slice(0, n) + '…' : t;
+  }
+
+  function usageRender(st) {
+    if (!st) return;
+    kvFill('#usage-kv', [
+      ['프록시', st.error ? st.error : (st.listening ? '듣고 있음 (' + st.host + ':' + st.port + ')' : '안 떠 있음')],
+      ['한 번에 받는 수', String(st.limit)],
+      ['지금 처리 중', String(st.running.length)],
+      ['기다리는 중', String(st.waiting.length)],
+      ['llama-server', st.upstream || '모름']
+    ]);
+
+    var body = $('#usage-now');
+    body.textContent = '';
+    var rows = st.running.map(function (r) { return ['처리 중', r]; })
+      .concat(st.waiting.map(function (r) { return ['기다림', r]; }));
+    if (!rows.length) {
+      var empty = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 6;
+      td.className = 'hint';
+      td.textContent = '지금 들어온 요청이 없다.';
+      empty.appendChild(td);
+      body.appendChild(empty);
+      return;
+    }
+    rows.forEach(function (pair) {
+      var r = pair[1];
+      var tr = document.createElement('tr');
+      [pair[0], r.who, r.model || '기본', msText(r.waitMs), msText(r.runMs), String(r.tokens || 0)]
+        .forEach(function (v) {
+          var td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+      body.appendChild(tr);
+    });
+  }
+
+  // 한 줄을 누르면 질문과 답 전문을 펼친다.
+  function usageDetail(row) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    var box = document.createElement('div');
+    box.className = 'log-detail';
+
+    [['질문', row.prompt], ['답', row.answer]].forEach(function (pair) {
+      var h = document.createElement('div');
+      h.className = 'log-detail-head';
+      h.textContent = pair[0];
+      var b = document.createElement('div');
+      b.className = 'log-detail-body';
+      b.textContent = pair[1] || '(없음)';
+      box.appendChild(h);
+      box.appendChild(b);
+    });
+
+    if (row.error) {
+      var e = document.createElement('div');
+      e.className = 'log-detail-head';
+      e.textContent = '오류: ' + row.error;
+      box.appendChild(e);
+    }
+    td.appendChild(box);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function usageRows(rows) {
+    var body = $('#usage-rows');
+    body.textContent = '';
+    if (!rows.length) {
+      var empty = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 6;
+      td.className = 'hint';
+      td.textContent = '이 날짜에는 기록이 없다.';
+      empty.appendChild(td);
+      body.appendChild(empty);
+      return;
+    }
+    // 새 것부터 본다.
+    rows.slice().reverse().forEach(function (row) {
+      var tr = document.createElement('tr');
+      tr.className = 'log-row';
+      var speed = row.runMs > 0 && row.tokens ? (Math.round((row.tokens / (row.runMs / 1000)) * 10) / 10) + ' tok/s' : '-';
+      [timeText(row.at), row.who, row.model || '기본', cut(row.prompt, 48), String(row.tokens || 0), speed]
+        .forEach(function (v) {
+          var td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+      var detail = usageDetail(row);
+      detail.hidden = true;
+      tr.addEventListener('click', function () {
+        detail.hidden = !detail.hidden;
+        tr.classList.toggle('is-open', !detail.hidden);
+      });
+      body.appendChild(tr);
+      body.appendChild(detail);
+    });
+  }
+
+  function usageLoadDay() {
+    var day = $('#usage-day').value;
+    if (!day) {
+      usageRows([]);
+      return Promise.resolve();
+    }
+    return window.api.proxy.log(day).then(function (rows) {
+      usageRows(rows || []);
+      setText('#usage-msg', (rows || []).length + '건');
+    }).catch(function (err) {
+      setText('#usage-msg', '읽지 못했다: ' + errText(err));
+    });
+  }
+
+  function usageLoadDays() {
+    return window.api.proxy.logDays().then(function (days) {
+      var sel = $('#usage-day');
+      var before = sel.value;
+      sel.textContent = '';
+      (days || []).forEach(function (d) {
+        var o = document.createElement('option');
+        o.value = d;
+        o.textContent = d;
+        sel.appendChild(o);
+      });
+      if (before && days.indexOf(before) >= 0) sel.value = before;
+      return usageLoadDay();
+    });
+  }
+
+  $('#usage-day').addEventListener('change', usageLoadDay);
+  $('#usage-reload').addEventListener('click', function () {
+    setText('#usage-msg', '읽는 중');
+    usageLoadDays();
+  });
+
+  function mountUsage() {
+    subscribe('proxy:status', usageRender);
+    window.api.proxy.status().then(usageRender).catch(function () {
+      // 서버가 안 떠 있으면 상태가 없다
+    });
+    usageLoadDays();
   }
 
   function mountShare() {
