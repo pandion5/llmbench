@@ -288,7 +288,8 @@ function registerIpc() {
       logDir: path.join(cfg.installDir, 'logs', 'chat'),
       peers: (await wireguard.info()).peers,
       limit: Math.max(1, Number(cfg.slots) || 1),
-      share: await wireguard.serve()
+      share: await wireguard.serve(),
+      serverInfo: async () => ({ status: await server.refresh(), logs: server.logs() })
     });
   }
 

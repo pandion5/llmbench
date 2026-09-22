@@ -79,7 +79,8 @@ function listen(server, port) {
     logDir,
     peers: [{ name: '박영범', address: '10.66.0.2' }],
     limit: 1,
-    port: 0
+    port: 0,
+    serverInfo: async () => ({ status: { state: 'ready', models: [] }, logs: ['한 줄'] })
   });
   await new Promise((r) => setTimeout(r, 200));
   const addr = proxy.address();
@@ -137,6 +138,18 @@ function listen(server, port) {
     });
   });
   assert.strictEqual(st, 401, `상태 조회 ${st}`);
+
+  // 6-2) 서버 상태와 로그를 키 있는 쪽에만 준다.
+  const srv = await new Promise((resolve) => {
+    http.get({ host: '127.0.0.1', port: PORT, path: '/llmbench/server', headers: { Authorization: 'Bearer testkey123' } }, (res) => {
+      let out = '';
+      res.on('data', (c) => (out += c));
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(out) }));
+    });
+  });
+  assert.strictEqual(srv.status, 200);
+  assert.strictEqual(srv.body.status.state, 'ready');
+  assert.deepStrictEqual(srv.body.logs, ['한 줄']);
 
   // 7) 질문 뽑기가 마지막 사용자 발화를 고른다.
   const pick = proxy._internal.promptOf({

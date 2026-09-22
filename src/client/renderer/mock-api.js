@@ -86,6 +86,12 @@
           waiting: [{ id: 4, who: '노트북', address: '10.66.0.3', model: 'qwen38', waitMs: 3100, runMs: 0, tokens: 0 }]
         });
       },
+      server: function () {
+        return Promise.resolve({
+          status: { state: 'ready', models: [{ id: 'qwen38', loaded: true }, { id: 'qwen36', loaded: false }] },
+          logs: ['srv  info: loading model qwen38', 'srv  info: model loaded in 84.2s', 'srv  info: listening on 127.0.0.1:8081']
+        });
+      },
       days: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
       log: function () {
         return Promise.resolve([

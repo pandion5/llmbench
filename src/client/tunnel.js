@@ -170,6 +170,10 @@ function serverStatus() {
   return ask('/llmbench/status');
 }
 
+function serverInfo() {
+  return ask('/llmbench/server');
+}
+
 function serverLogDays() {
   return ask('/llmbench/log/days');
 }
@@ -187,5 +191,5 @@ async function forget() {
 
 module.exports = {
   installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL,
-  serverStatus, serverLogDays, serverLog
+  serverStatus, serverLogDays, serverLog, serverInfo
 };

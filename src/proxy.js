@@ -351,6 +351,20 @@ async function handle(req, res) {
     return;
   }
 
+  // llama-server 상태와 최근 로그. 클라이언트가 서버 PC 앞에 안 가도 볼 수 있게 한다.
+  if (urlPath === '/llmbench/server') {
+    if (!checkKey(req)) return unauthorized(res);
+    let data = { status: null, logs: [] };
+    try {
+      data = opts.serverInfo ? await opts.serverInfo() : data;
+    } catch (e) {
+      data = { status: null, logs: [], error: e.message };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
+    return;
+  }
+
   // 기록 조회. 클라이언트가 터널 너머에서 부른다.
   if (urlPath === '/llmbench/log/days' || urlPath === '/llmbench/log') {
     if (!checkKey(req)) return unauthorized(res);
@@ -446,6 +460,8 @@ function start(o) {
     apiKey: o.apiKey || null,
     logDir: o.logDir || null,
     peers: o.peers || [],
+    // 서버 상태와 로그를 돌려주는 함수. 셋업 앱이 넣어 준다.
+    serverInfo: o.serverInfo || null,
     limit: o.limit || 1,
     // 0을 주면 빈 포트를 골라 준다. 검사에서 쓴다.
     port: Number.isInteger(o.port) ? o.port : PORT,

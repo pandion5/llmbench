@@ -89,6 +89,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('usage:status', () => tunnel.serverStatus());
+  ipcMain.handle('usage:server', () => tunnel.serverInfo());
   ipcMain.handle('usage:days', () => tunnel.serverLogDays());
   ipcMain.handle('usage:log', (_e, day) => tunnel.serverLog(day));
   ipcMain.handle('update:check', () => update.check());

@@ -470,6 +470,29 @@
     });
   }
 
+  // llama-server 상태와 최근 로그. 모델이 안 올라올 때 이유가 여기 찍힌다.
+  function usageServer() {
+    return window.api.usage.server().then(function (r) {
+      var st = r.status || {};
+      var models = (st.models || []).map(function (m) { return m.id + (m.loaded ? '' : ' (내려가 있음)'); });
+      kvFill('#usage-server-kv', [
+        ['상태', st.state === 'ready' ? '준비됨' : st.state === 'starting' ? '올라오는 중' : st.state === 'error' ? '오류: ' + (st.error || '') : st.state === 'stopped' ? '멈춤' : (r.error || '모름')],
+        ['모델', models.length ? models.join(', ') : '없음']
+      ]);
+      var el = $('#usage-server-log');
+      el.textContent = (r.logs || []).join('\n');
+      el.scrollTop = el.scrollHeight;
+      setText('#usage-server-msg', (r.logs || []).length + '줄');
+    }).catch(function (err) {
+      kvFill('#usage-server-kv', [['상태', '읽지 못했다: ' + errText(err)]]);
+    });
+  }
+
+  $('#usage-server-reload').addEventListener('click', function () {
+    setText('#usage-server-msg', '읽는 중');
+    usageServer();
+  });
+
   function usageStatus() {
     return window.api.usage.status().then(usageRender).catch(function (err) {
       kvFill('#usage-kv', [['서버', '상태를 읽지 못했다: ' + errText(err)]]);
@@ -493,6 +516,7 @@
 
   function mountUsage() {
     usageStatus();
+    usageServer();
     usageLoadDays();
   }
 
