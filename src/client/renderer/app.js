@@ -19,7 +19,7 @@
 
   // ---------- 화면 전환 ----------
 
-  var TABS = ['chat', 'harness', 'conn'];
+  var TABS = ['chat', 'harness', 'conn', 'usage'];
 
   function switchTab(name) {
     TABS.forEach(function (key) {
@@ -33,6 +33,8 @@
     });
     if (name === 'harness') loadHarness();
     if (name === 'conn') renderConn(state.conn);
+    if (name === 'usage') mountUsage();
+    usageTick(name === 'usage');
   }
 
   TABS.forEach(function (key) {
@@ -286,6 +288,195 @@
       setSending(false);
     }
   });
+
+  // ---------- 사용 기록 ----------
+  // 서버 프록시에 물어본다. 화면을 보고 있는 동안만 주기로 갱신한다.
+
+  var usageTimer = null;
+
+  function msText(ms) {
+    if (!ms) return '0초';
+    if (ms < 1000) return ms + 'ms';
+    return (Math.round(ms / 100) / 10) + '초';
+  }
+
+  function timeText(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso || '');
+    return String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0') + ':' +
+      String(d.getSeconds()).padStart(2, '0');
+  }
+
+  function cut(text, n) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    return t.length > n ? t.slice(0, n) + '…' : t;
+  }
+
+  function kvFill(sel, pairs) {
+    var el = $(sel);
+    el.textContent = '';
+    pairs.forEach(function (pair) {
+      var dt = document.createElement('dt');
+      dt.textContent = pair[0];
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      el.appendChild(dt);
+      el.appendChild(dd);
+    });
+  }
+
+  function emptyRow(body, text) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    td.className = 'hint';
+    td.textContent = text;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+
+  function usageRender(st) {
+    kvFill('#usage-kv', [
+      ['서버', st.error ? st.error : (st.listening ? '받고 있음' : '안 받고 있음')],
+      ['한 번에 받는 수', String(st.limit)],
+      ['지금 처리 중', String(st.running.length)],
+      ['기다리는 중', String(st.waiting.length)]
+    ]);
+
+    var body = $('#usage-now');
+    body.textContent = '';
+    var rows = st.running.map(function (r) { return ['처리 중', r]; })
+      .concat(st.waiting.map(function (r) { return ['기다림', r]; }));
+    if (!rows.length) {
+      emptyRow(body, '지금 들어온 요청이 없다.');
+      return;
+    }
+    rows.forEach(function (pair) {
+      var r = pair[1];
+      var tr = document.createElement('tr');
+      [pair[0], r.who, r.model || '기본', msText(r.waitMs), msText(r.runMs), String(r.tokens || 0)]
+        .forEach(function (v) {
+          var td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+      body.appendChild(tr);
+    });
+  }
+
+  function usageDetail(row) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    var box = document.createElement('div');
+    box.className = 'log-detail';
+    [['질문', row.prompt], ['답', row.answer]].forEach(function (pair) {
+      var h = document.createElement('div');
+      h.className = 'log-detail-head';
+      h.textContent = pair[0];
+      var b = document.createElement('div');
+      b.className = 'log-detail-body';
+      b.textContent = pair[1] || '(없음)';
+      box.appendChild(h);
+      box.appendChild(b);
+    });
+    if (row.error) {
+      var e = document.createElement('div');
+      e.className = 'log-detail-head';
+      e.textContent = '오류: ' + row.error;
+      box.appendChild(e);
+    }
+    td.appendChild(box);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function usageRows(rows) {
+    var body = $('#usage-rows');
+    body.textContent = '';
+    if (!rows.length) {
+      emptyRow(body, '이 날짜에는 기록이 없다.');
+      return;
+    }
+    rows.slice().reverse().forEach(function (row) {
+      var tr = document.createElement('tr');
+      tr.className = 'log-row';
+      var speed = row.runMs > 0 && row.tokens ? (Math.round((row.tokens / (row.runMs / 1000)) * 10) / 10) + ' tok/s' : '-';
+      [timeText(row.at), row.who, row.model || '기본', cut(row.prompt, 48), String(row.tokens || 0), speed]
+        .forEach(function (v) {
+          var td = document.createElement('td');
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+      var detail = usageDetail(row);
+      detail.hidden = true;
+      tr.addEventListener('click', function () {
+        detail.hidden = !detail.hidden;
+        tr.classList.toggle('is-open', !detail.hidden);
+      });
+      body.appendChild(tr);
+      body.appendChild(detail);
+    });
+  }
+
+  function usageLoadDay() {
+    var day = $('#usage-day').value;
+    if (!day) {
+      usageRows([]);
+      return Promise.resolve();
+    }
+    return window.api.usage.log(day).then(function (rows) {
+      usageRows(rows || []);
+      setText('#usage-msg', (rows || []).length + '건');
+    }).catch(function (err) {
+      setText('#usage-msg', '읽지 못했다: ' + errText(err));
+    });
+  }
+
+  function usageLoadDays() {
+    return window.api.usage.days().then(function (days) {
+      var sel = $('#usage-day');
+      var before = sel.value;
+      sel.textContent = '';
+      (days || []).forEach(function (d) {
+        var o = document.createElement('option');
+        o.value = d;
+        o.textContent = d;
+        sel.appendChild(o);
+      });
+      if (before && days.indexOf(before) >= 0) sel.value = before;
+      return usageLoadDay();
+    }).catch(function (err) {
+      setText('#usage-msg', '날짜를 읽지 못했다: ' + errText(err));
+    });
+  }
+
+  function usageStatus() {
+    return window.api.usage.status().then(usageRender).catch(function (err) {
+      kvFill('#usage-kv', [['서버', '상태를 읽지 못했다: ' + errText(err)]]);
+    });
+  }
+
+  // 사용 기록 화면을 보고 있을 때만 주기로 다시 읽는다.
+  function usageTick(on) {
+    if (usageTimer) {
+      clearInterval(usageTimer);
+      usageTimer = null;
+    }
+    if (on) usageTimer = setInterval(usageStatus, 3000);
+  }
+
+  $('#usage-day').addEventListener('change', usageLoadDay);
+  $('#usage-reload').addEventListener('click', function () {
+    setText('#usage-msg', '읽는 중');
+    usageLoadDays();
+  });
+
+  function mountUsage() {
+    usageStatus();
+    usageLoadDays();
+  }
 
   function sendChat() {
     var text = $('#chat-text').value.trim();

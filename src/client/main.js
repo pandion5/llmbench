@@ -88,6 +88,9 @@ function registerIpc() {
     return harness.launchRemote(id, withDir, t);
   });
 
+  ipcMain.handle('usage:status', () => tunnel.serverStatus());
+  ipcMain.handle('usage:days', () => tunnel.serverLogDays());
+  ipcMain.handle('usage:log', (_e, day) => tunnel.serverLog(day));
   ipcMain.handle('update:check', () => update.check());
   ipcMain.handle('update:apply', () => update.apply());
   ipcMain.handle('app:version', () => app.getVersion());

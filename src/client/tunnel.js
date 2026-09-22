@@ -152,6 +152,32 @@ async function target() {
   return { baseUrl: `http://${s.serverAddress}:${port}`, apiKey: s.apiKey, name: s.name };
 }
 
+// 서버 프록시에 물어본다. 상태와 기록 조회에 쓴다.
+async function ask(pathname, params) {
+  const t = await target();
+  if (!t) throw new Error('서버에 연결돼 있지 않다');
+  const url = new URL(pathname, t.baseUrl);
+  for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
+  const res = await fetch(url, {
+    headers: t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {},
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!res.ok) throw new Error(`서버가 ${res.status}로 답했다`);
+  return res.json();
+}
+
+function serverStatus() {
+  return ask('/llmbench/status');
+}
+
+function serverLogDays() {
+  return ask('/llmbench/log/days');
+}
+
+function serverLog(day) {
+  return ask('/llmbench/log', { day });
+}
+
 async function forget() {
   await down().catch(() => {});
   await fsp.rm(statePath(), { force: true });
@@ -159,4 +185,7 @@ async function forget() {
   return { ok: true };
 }
 
-module.exports = { installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL };
+module.exports = {
+  installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL,
+  serverStatus, serverLogDays, serverLog
+};

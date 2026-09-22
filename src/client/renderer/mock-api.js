@@ -78,6 +78,24 @@
       check: function () { return Promise.resolve({ current: '0.6.0', latest: '0.6.1', available: true, notes: '가짜 변경 내용' }); },
       apply: function () { return Promise.resolve({ ok: true }); }
     },
+    usage: {
+      status: function () {
+        return Promise.resolve({
+          listening: true, error: null, limit: 1,
+          running: [{ id: 3, who: '박영범', address: '10.66.0.2', model: 'qwen38', waitMs: 0, runMs: 4200, tokens: 81 }],
+          waiting: [{ id: 4, who: '노트북', address: '10.66.0.3', model: 'qwen38', waitMs: 3100, runMs: 0, tokens: 0 }]
+        });
+      },
+      days: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
+      log: function () {
+        return Promise.resolve([
+          { at: new Date().toISOString(), who: '이 PC', address: '127.0.0.1', model: 'qwen36',
+            waitMs: 0, runMs: 16200, tokens: 60, prompt: '한국에서 제일 높은 산은?', answer: '백두산이 2744m로 가장 높다.' },
+          { at: new Date().toISOString(), who: '박영범', address: '10.66.0.2', model: 'qwen38',
+            waitMs: 2400, runMs: 88000, tokens: 1024, prompt: 'src/wireguard.js를 읽고 다섯 줄로 정리해줘', answer: '터널 서비스를 올리고 내린다.' }
+        ]);
+      }
+    },
     app: {
       version: function () { return Promise.resolve('0.6.0'); },
       copy: function () { return Promise.resolve({ ok: true }); },

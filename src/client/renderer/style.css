@@ -215,6 +215,31 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .think-body::-webkit-scrollbar-track { background: transparent; }
 .msg-error { align-self: flex-start; background: #2a1c1c; border: 1px solid #5f2f2f; }
 
+/* 기록 한 줄을 누르면 질문과 답을 펼친다. */
+.log-row { cursor: pointer; }
+.log-row:hover td { background: var(--bg-3); }
+.log-row.is-open td { background: var(--bg-3); }
+.log-detail {
+  padding: 10px 12px 12px;
+  border-left: 1px solid var(--accent);
+  background: var(--bg);
+}
+.log-detail-head {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 8px;
+}
+.log-detail-head:first-child { margin-top: 0; }
+.log-detail-body {
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .form-check { display: flex; align-items: center; }
 .form-check input { width: auto; margin: 0; }
 

@@ -336,6 +336,18 @@ async function handle(req, res) {
     return;
   }
 
+  // 기록 조회. 클라이언트가 터널 너머에서 부른다.
+  if (urlPath === '/llmbench/log/days' || urlPath === '/llmbench/log') {
+    if (!checkKey(req)) return unauthorized(res);
+    const q = new URL(req.url, 'http://x').searchParams;
+    const data = urlPath === '/llmbench/log'
+      ? await readLog(q.get('day') || '')
+      : await logDays();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
+    return;
+  }
+
   if (opts.apiKey && address !== '127.0.0.1' && !checkKey(req)) return unauthorized(res);
 
   let bodyBuf = Buffer.alloc(0);

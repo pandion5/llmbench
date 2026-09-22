@@ -13,6 +13,7 @@
       <button type="button" class="tab is-active" role="tab" id="tab-chat" data-tab="chat" aria-selected="true" aria-controls="panel-chat">대화</button>
       <button type="button" class="tab" role="tab" id="tab-harness" data-tab="harness" aria-selected="false" aria-controls="panel-harness">하네스</button>
       <button type="button" class="tab" role="tab" id="tab-conn" data-tab="conn" aria-selected="false" aria-controls="panel-conn">연결</button>
+      <button type="button" class="tab" role="tab" id="tab-usage" data-tab="usage" aria-selected="false" aria-controls="panel-usage">사용 기록</button>
     </nav>
     <div class="topbar-status">
       <span id="version-badge" class="badge"></span>
@@ -118,6 +119,37 @@
           <button type="button" class="btn" id="conn-apply">새 초대 코드 넣기</button>
           <button type="button" class="btn" id="conn-forget">연결 정보 지우기</button>
         </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden>
+      <p class="hint">서버에 들어온 요청을 보여준다. 함께 쓰는 사람들의 질문과 답이 모두 보인다.</p>
+
+      <div class="card">
+        <h2>지금</h2>
+        <dl class="kv" id="usage-kv"></dl>
+        <table class="grid">
+          <thead>
+            <tr><th scope="col">상태</th><th scope="col">보낸 사람</th><th scope="col">모델</th><th scope="col">기다린 시간</th><th scope="col">걸린 시간</th><th scope="col">토큰</th></tr>
+          </thead>
+          <tbody id="usage-now"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>기록</h2>
+        <div class="row">
+          <label for="usage-day">날짜</label>
+          <select id="usage-day"></select>
+          <button type="button" class="btn btn-sm" id="usage-reload">새로 읽기</button>
+          <span class="hint" id="usage-msg" aria-live="polite"></span>
+        </div>
+        <table class="grid">
+          <thead>
+            <tr><th scope="col">시각</th><th scope="col">보낸 사람</th><th scope="col">모델</th><th scope="col">질문</th><th scope="col">토큰</th><th scope="col">속도</th></tr>
+          </thead>
+          <tbody id="usage-rows"></tbody>
+        </table>
       </div>
     </section>
   </main>

@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('api', {
     check: () => call('update:check'),
     apply: () => call('update:apply')
   },
+  usage: {
+    status: () => call('usage:status'),
+    days: () => call('usage:days'),
+    log: (day) => call('usage:log', day)
+  },
   app: {
     version: () => call('app:version'),
     copy: (text) => call('app:copy', text),
