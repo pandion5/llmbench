@@ -38,6 +38,10 @@ contextBridge.exposeInMainWorld('api', {
   usage: {
     status: () => call('usage:status'),
     server: () => call('usage:server'),
+    serverStart: () => call('usage:serverStart'),
+    serverStop: () => call('usage:serverStop'),
+    serverUpdateCheck: () => call('usage:serverUpdateCheck'),
+    serverUpdateApply: () => call('usage:serverUpdateApply'),
     days: () => call('usage:days'),
     log: (day) => call('usage:log', day)
   },

@@ -286,6 +286,7 @@
     $('#cfg-slots').value = cfg.slots || 1;
     $('#cfg-kwhPrice').value = cfg.kwhPrice;
     $('#cfg-autoLoad36').checked = cfg.autoLoad36 !== false;
+    $('#cfg-autoStart').checked = cfg.autoStart !== false;
     $('#cfg-mtp').checked = cfg.mtp === true;
     $('#cfg-mtpFile').value = cfg.mtpFile;
     $('#cfg-loadMode').value = cfg.loadMode;
@@ -327,6 +328,7 @@
       slots: Number($('#cfg-slots').value) || 1,
       kwhPrice: Number($('#cfg-kwhPrice').value),
       autoLoad36: $('#cfg-autoLoad36').checked,
+      autoStart: $('#cfg-autoStart').checked,
       mtp: $('#cfg-mtp').checked,
       mtpFile: $('#cfg-mtpFile').value,
       loadMode: $('#cfg-loadMode').value,

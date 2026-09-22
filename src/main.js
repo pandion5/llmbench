@@ -64,6 +64,9 @@ async function ensureAdmin() {
   return false;
 }
 
+// registerIpc 안에서 만든 함수를 부팅 때도 쓴다.
+let startProxyAtBoot = async () => {};
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -289,26 +292,50 @@ function registerIpc() {
       peers: (await wireguard.info()).peers,
       limit: Math.max(1, Number(cfg.slots) || 1),
       share: await wireguard.serve(),
-      serverInfo: async () => ({ status: await server.refresh(), logs: server.logs() })
+      serverInfo: async () => ({ status: await server.refresh(), logs: server.logs() }),
+      control: {
+        startServer: async (from) => {
+          console.log(`[제어] ${from.who}(${from.address})가 서버 시작을 요청`);
+          return startServer();
+        },
+        stopServer: async (from) => {
+          console.log(`[제어] ${from.who}(${from.address})가 서버 중지를 요청`);
+          return server.stop();
+        },
+        updateCheck: () => update.check(),
+        updateApply: async (from) => {
+          console.log(`[제어] ${from.who}(${from.address})가 앱 업데이트를 요청`);
+          return update.apply();
+        }
+      }
     });
   }
 
-  ipcMain.handle('server:start', async () => {
+  // llama-server를 띄운다. 프록시는 이미 떠 있으니 슬롯 수만 맞춘다.
+  async function startServer() {
     const cfg = await config.get();
     const r = await server.start(cfg, { apiKey: await wireguard.apiKey() });
-    await startProxy();
+    proxy.setLimit(Math.max(1, Number(cfg.slots) || 1));
     return r;
-  });
+  }
+
+  ipcMain.handle('server:start', () => startServer());
+
+  startProxyAtBoot = async () => {
+    await startProxy();
+    const cfg = await config.get();
+    if (cfg.autoStart !== false) {
+      startServer().catch((e) => console.error('서버 자동 시작 실패:', e.message));
+    }
+  };
 
   ipcMain.handle('proxy:status', () => proxy.status());
   ipcMain.handle('proxy:restart', () => startProxy());
   ipcMain.handle('proxy:logDays', () => proxy.logDays());
   ipcMain.handle('proxy:log', (_e, day) => proxy.readLog(day));
 
-  ipcMain.handle('server:stop', () => {
-    proxy.stop();
-    return server.stop();
-  });
+  // 프록시는 내리지 않는다. 서버가 꺼져 있어도 클라이언트가 상태를 보고 켜라고 할 수 있어야 한다.
+  ipcMain.handle('server:stop', () => server.stop());
   ipcMain.handle('server:status', () => server.refresh());
   ipcMain.handle('server:logs', () => server.logs());
   ipcMain.handle('server:saveLogs', () =>
@@ -442,6 +469,13 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   startMonitor();
+
+  // 프록시는 앱이 켜져 있는 동안 늘 떠 있다. 설정에 따라 llama-server도 바로 올린다.
+  try {
+    await startProxyAtBoot();
+  } catch (e) {
+    console.error('프록시를 못 띄웠다:', e.message);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

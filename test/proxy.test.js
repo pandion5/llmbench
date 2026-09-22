@@ -80,7 +80,11 @@ function listen(server, port) {
     peers: [{ name: '박영범', address: '10.66.0.2' }],
     limit: 1,
     port: 0,
-    serverInfo: async () => ({ status: { state: 'ready', models: [] }, logs: ['한 줄'] })
+    serverInfo: async () => ({ status: { state: 'ready', models: [] }, logs: ['한 줄'] }),
+    control: {
+      startServer: async (from) => ({ ok: true, by: from.who }),
+      stopServer: async () => ({ ok: true })
+    }
   });
   await new Promise((r) => setTimeout(r, 200));
   const addr = proxy.address();
@@ -150,6 +154,23 @@ function listen(server, port) {
   assert.strictEqual(srv.status, 200);
   assert.strictEqual(srv.body.status.state, 'ready');
   assert.deepStrictEqual(srv.body.logs, ['한 줄']);
+
+  // 6-3) 켜기는 POST만 받고, 누가 시켰는지 넘긴다. 없는 동작은 501.
+  const call = (method, p) => new Promise((resolve) => {
+    const rq = http.request({ host: '127.0.0.1', port: PORT, method, path: p, headers: { Authorization: 'Bearer testkey123' } }, (res) => {
+      let out = '';
+      res.on('data', (c) => (out += c));
+      res.on('end', () => resolve({ status: res.statusCode, body: out ? JSON.parse(out) : null }));
+    });
+    rq.end();
+  });
+  const g = await call('GET', '/llmbench/server/start');
+  assert.strictEqual(g.status, 405, `GET으로 켜기 ${g.status}`);
+  const st2 = await call('POST', '/llmbench/server/start');
+  assert.strictEqual(st2.status, 200);
+  assert.strictEqual(st2.body.by, '이 PC');
+  const na = await call('POST', '/llmbench/update/apply');
+  assert.strictEqual(na.status, 501, `없는 동작 ${na.status}`);
 
   // 7) 질문 뽑기가 마지막 사용자 발화를 고른다.
   const pick = proxy._internal.promptOf({

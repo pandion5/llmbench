@@ -90,6 +90,10 @@ function registerIpc() {
 
   ipcMain.handle('usage:status', () => tunnel.serverStatus());
   ipcMain.handle('usage:server', () => tunnel.serverInfo());
+  ipcMain.handle('usage:serverStart', () => tunnel.serverStart());
+  ipcMain.handle('usage:serverStop', () => tunnel.serverStop());
+  ipcMain.handle('usage:serverUpdateCheck', () => tunnel.serverUpdateCheck());
+  ipcMain.handle('usage:serverUpdateApply', () => tunnel.serverUpdateApply());
   ipcMain.handle('usage:days', () => tunnel.serverLogDays());
   ipcMain.handle('usage:log', (_e, day) => tunnel.serverLog(day));
   ipcMain.handle('update:check', () => update.check());

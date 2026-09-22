@@ -92,6 +92,10 @@
           logs: ['srv  info: loading model qwen38', 'srv  info: model loaded in 84.2s', 'srv  info: listening on 127.0.0.1:8081']
         });
       },
+      serverStart: function () { return Promise.resolve({ ok: true }); },
+      serverStop: function () { return Promise.resolve({ ok: true }); },
+      serverUpdateCheck: function () { return Promise.resolve({ current: '0.10.3', latest: '0.11.0', available: true, notes: '', error: null }); },
+      serverUpdateApply: function () { return Promise.resolve({ ok: true }); },
       days: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
       log: function () {
         return Promise.resolve([

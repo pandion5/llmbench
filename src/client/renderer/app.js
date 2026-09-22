@@ -493,6 +493,69 @@
     usageServer();
   });
 
+  // 서버 PC의 llama-server를 여기서 켜고 끈다. 모델을 올리는 데 몇 분 걸리니
+  // 켠 뒤에는 상태가 준비됨으로 바뀔 때까지 로그를 보면 된다.
+  $('#usage-server-start').addEventListener('click', function () {
+    var btn = $('#usage-server-start');
+    btn.disabled = true;
+    setText('#usage-server-msg', '켜라고 보냈다. 모델을 올리는 데 몇 분 걸린다.');
+    window.api.usage.serverStart().then(function () {
+      return usageServer();
+    }).catch(function (err) {
+      setText('#usage-server-msg', '켜지 못했다: ' + errText(err));
+    }).then(function () { btn.disabled = false; });
+  });
+
+  $('#usage-server-stop').addEventListener('click', function () {
+    if (!confirm('서버 PC의 llama-server를 끈다. 다른 사람이 쓰고 있으면 그 대화가 끊긴다. 진행할까?')) return;
+    var btn = $('#usage-server-stop');
+    btn.disabled = true;
+    window.api.usage.serverStop().then(function () {
+      setText('#usage-server-msg', '끄라고 보냈다.');
+      return usageServer();
+    }).catch(function (err) {
+      setText('#usage-server-msg', '끄지 못했다: ' + errText(err));
+    }).then(function () { btn.disabled = false; });
+  });
+
+  // 셋업 앱 자체를 업데이트한다. 앱이 다시 뜨면 설정대로 서버를 올린다.
+  var pendingUpdate = null;
+  $('#usage-update-check').addEventListener('click', function () {
+    setText('#usage-update-msg', '확인 중');
+    $('#usage-update-apply').hidden = true;
+    window.api.usage.serverUpdateCheck().then(function (u) {
+      pendingUpdate = u;
+      if (u && u.error) {
+        setText('#usage-update-msg', '확인 실패: ' + u.error);
+      } else if (u && u.available) {
+        setText('#usage-update-msg', '서버 앱 v' + u.current + ' → v' + u.latest);
+        $('#usage-update-apply').textContent = 'v' + u.latest + '로 업데이트';
+        $('#usage-update-apply').hidden = false;
+      } else {
+        setText('#usage-update-msg', '서버 앱은 최신이다' + (u && u.current ? ' (v' + u.current + ')' : ''));
+      }
+    }).catch(function (err) {
+      setText('#usage-update-msg', '확인 실패: ' + errText(err));
+    });
+  });
+
+  $('#usage-update-apply').addEventListener('click', function () {
+    if (!pendingUpdate || !pendingUpdate.available) return;
+    if (!confirm('서버 앱을 v' + pendingUpdate.latest + '로 업데이트한다. 앱이 다시 뜨는 동안 서버가 잠시 끊기고, 다른 사람 대화도 끊긴다. 진행할까?')) return;
+    var btn = $('#usage-update-apply');
+    btn.disabled = true;
+    setText('#usage-update-msg', '업데이트하라고 보냈다. 앱이 다시 뜨면 서버도 올라온다.');
+    window.api.usage.serverUpdateApply().then(function (r) {
+      if (r && r.ok === false) setText('#usage-update-msg', '업데이트 실패: ' + (r.error || ''));
+    }).catch(function (err) {
+      // 앱이 내려가는 중이면 응답이 끊길 수 있다. 그건 실패가 아니다.
+      setText('#usage-update-msg', '요청은 갔다. 잠시 뒤 서버 상태를 다시 읽는다. (' + errText(err) + ')');
+    }).then(function () {
+      btn.disabled = false;
+      btn.hidden = true;
+    });
+  });
+
   function usageStatus() {
     return window.api.usage.status().then(usageRender).catch(function (err) {
       kvFill('#usage-kv', [['서버', '상태를 읽지 못했다: ' + errText(err)]]);

@@ -351,6 +351,41 @@ async function handle(req, res) {
     return;
   }
 
+  // 서버 켜기, 끄기, 앱 업데이트. 셋업 앱이 넣어 준 함수를 부른다.
+  // 상태를 바꾸는 것은 POST만 받는다. 키를 가진 사람은 누구나 부를 수 있다.
+  const control = opts.control || {};
+  const actions = {
+    '/llmbench/server/start': { fn: control.startServer, post: true },
+    '/llmbench/server/stop': { fn: control.stopServer, post: true },
+    '/llmbench/update/check': { fn: control.updateCheck, post: false },
+    '/llmbench/update/apply': { fn: control.updateApply, post: true }
+  };
+  if (actions[urlPath]) {
+    if (!checkKey(req)) return unauthorized(res);
+    const a = actions[urlPath];
+    if (a.post && req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'POST로 부른다' } }));
+      return;
+    }
+    if (!a.fn) {
+      res.writeHead(501, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: '이 서버는 그 동작을 지원하지 않는다' } }));
+      return;
+    }
+    let out;
+    try {
+      out = await a.fn({ who: whoIs(address), address });
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: { message: e.message } }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(out === undefined ? { ok: true } : out));
+    return;
+  }
+
   // llama-server 상태와 최근 로그. 클라이언트가 서버 PC 앞에 안 가도 볼 수 있게 한다.
   if (urlPath === '/llmbench/server') {
     if (!checkKey(req)) return unauthorized(res);
@@ -462,6 +497,8 @@ function start(o) {
     peers: o.peers || [],
     // 서버 상태와 로그를 돌려주는 함수. 셋업 앱이 넣어 준다.
     serverInfo: o.serverInfo || null,
+    // 켜기, 끄기, 업데이트 함수 묶음. 없으면 그 경로는 501을 준다.
+    control: o.control || null,
     limit: o.limit || 1,
     // 0을 주면 빈 포트를 골라 준다. 검사에서 쓴다.
     port: Number.isInteger(o.port) ? o.port : PORT,

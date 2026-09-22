@@ -153,17 +153,41 @@ async function target() {
 }
 
 // 서버 프록시에 물어본다. 상태와 기록 조회에 쓴다.
-async function ask(pathname, params) {
+async function ask(pathname, params, method) {
   const t = await target();
   if (!t) throw new Error('서버에 연결돼 있지 않다');
   const url = new URL(pathname, t.baseUrl);
   for (const [k, v] of Object.entries(params || {})) url.searchParams.set(k, v);
   const res = await fetch(url, {
+    method: method || 'GET',
     headers: t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {},
-    signal: AbortSignal.timeout(15000)
+    signal: AbortSignal.timeout(20000)
   });
-  if (!res.ok) throw new Error(`서버가 ${res.status}로 답했다`);
+  if (!res.ok) {
+    let why = '';
+    try {
+      const j = await res.json();
+      why = j && j.error && j.error.message ? `: ${j.error.message}` : '';
+    } catch (e) {
+      why = '';
+    }
+    throw new Error(`서버가 ${res.status}로 답했다${why}`);
+  }
   return res.json();
+}
+
+// 서버 PC의 llama-server를 켜고 끈다. 셋업 앱 업데이트도 시킨다.
+function serverStart() {
+  return ask('/llmbench/server/start', null, 'POST');
+}
+function serverStop() {
+  return ask('/llmbench/server/stop', null, 'POST');
+}
+function serverUpdateCheck() {
+  return ask('/llmbench/update/check');
+}
+function serverUpdateApply() {
+  return ask('/llmbench/update/apply', null, 'POST');
 }
 
 function serverStatus() {
@@ -191,5 +215,6 @@ async function forget() {
 
 module.exports = {
   installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL,
-  serverStatus, serverLogDays, serverLog, serverInfo
+  serverStatus, serverLogDays, serverLog, serverInfo,
+  serverStart, serverStop, serverUpdateCheck, serverUpdateApply
 };
