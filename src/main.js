@@ -388,7 +388,9 @@ function registerIpc() {
   // 서버가 뜬 직후 보관해 둔 시스템 프롬프트를 모델별로 한 번 보낸다.
   // 답은 1토큰만 받는다. 이걸로 프롬프트 캐시가 채워져 첫 사람이 바로 답을 받는다.
   // 3.6은 시작할 때 올리도록 설정한 경우에만 한다. 아니면 20GB를 괜히 올린다.
+  let warmedDay = '';
   async function warmCache(cfg, apiKey) {
+    warmedDay = new Date().toDateString();
     const list = await proxy.warmPrompts();
     const me = { at: '', who: '이 PC', address: '127.0.0.1' };
     for (const w of list) {
@@ -452,6 +454,17 @@ function registerIpc() {
     console.log(`[예열] ${ev.action}${ev.ok ? '' : ' 실패: ' + ev.error}`);
     proxy.recordEvent(ev);
   }
+
+  // 예열 파일은 오늘 날짜로 바꿔 보내지만 서버가 며칠 켜져 있으면 캐시에는 예열한 날의 날짜가 남는다.
+  // 날짜가 바뀐 뒤 요청이 없을 때 한 번 더 예열한다. 3.6이 올라가 있으면 예열이 3.8을 다시 올리니 기다린다.
+  setInterval(async () => {
+    if (!warmedDay || warmedDay === new Date().toDateString()) return;
+    if (bench.busy() || server.status().state !== 'ready') return;
+    const p = proxy.status();
+    if (p.running.length || p.waiting.length) return;
+    if (!(await server.fetchModels()).some((m) => m.id === 'qwen38' && m.loaded)) return;
+    wireguard.apiKey().then((k) => warmCache(null, k)).catch((e) => console.error('날짜 바뀐 뒤 예열 실패:', e.message));
+  }, 60 * 1000);
 
   ipcMain.handle('server:start', () => startServer());
 

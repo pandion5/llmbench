@@ -53,10 +53,33 @@ const WARM_MIN_CHARS = 4000;
 const WARM_MAX_FILES = 6;
 const warmSeen = new Map();
 
+// 하네스는 프롬프트에 오늘 날짜를 넣는다. OpenCode는 시스템 프롬프트에, OpenClaude는 질문 앞 안내문에 넣는다.
+// 예열한 날짜와 다르면 OpenCode는 시스템 프롬프트 가운데부터 달라져 전체를 다시 읽는다.
+// 날짜만 다른 첫 턴은 같은 파일에 남기고, 예열할 때 날짜를 오늘로 바꿔 보낸다.
+const DATE_LINES = [
+  // OpenCode는 Date.toDateString() 형식이다
+  [/Today's date: \w{3} \w{3} \d{2} \d{4}/g, (d) => `Today's date: ${d.toDateString()}`],
+  // OpenClaude는 로컬 날짜를 YYYY-MM-DD로 쓴다
+  [/Today's date is \d{4}-\d{2}-\d{2}\./g, (d) => `Today's date is ${localDay(d)}.`]
+];
+
+function localDay(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function withDate(text, d) {
+  if (typeof text !== 'string') return text;
+  for (const [re, fmt] of DATE_LINES) text = text.replace(re, fmt(d));
+  return text;
+}
+
 // 하네스마다 시스템 프롬프트가 다르니 파일도 따로 둔다. 모델 이름과 시스템 프롬프트 전체 해시.
 // 같은 하네스라도 실행 방식(대화형, -p)에 따라 뒷부분이 달라서 앞부분만 보면 서로 덮어쓴다.
+// 날짜는 고정 값으로 바꾼 뒤 해시한다. 날이 바뀌어도 같은 파일을 덮어쓴다.
+const KEY_DATE = new Date(2000, 0, 1);
 function warmKey(model, messages) {
-  const head = textOf(messages[0].content);
+  const head = withDate(textOf(messages[0].content), KEY_DATE);
   const hash = crypto.createHash('sha1').update(head).digest('hex').slice(0, 8);
   return `${model.replace(/[^\w.-]/g, '_')}-${hash}`;
 }
@@ -165,11 +188,17 @@ async function warmPrompts() {
   // 최근에 쓴 것부터. 예열이 오래 걸리니 자주 쓰는 하네스가 먼저 준비된다.
   const stats = await Promise.all(names.filter((f) => f.endsWith('.json')).map(async (f) => ({ f, t: (await fsp.stat(path.join(dir, f)).catch(() => ({ mtimeMs: 0 }))).mtimeMs })));
   stats.sort((a, b) => b.t - a.t);
+  const now = new Date();
   for (const n of stats.map((x) => x.f)) {
     try {
       const w = JSON.parse(await fsp.readFile(path.join(dir, n), 'utf8'));
       // 예전 파일에는 사람 질문이 들어 있다. 보낼 때도 질문 칸을 비운다.
-      if (Array.isArray(w.messages) && w.messages.length) w.messages = warmMessages(w.messages);
+      if (Array.isArray(w.messages) && w.messages.length) {
+        w.messages = warmMessages(w.messages);
+        // 파일을 남긴 날의 날짜를 오늘 날짜로 바꾼다
+        w.messages[0].content = withDate(w.messages[0].content, now);
+      }
+      if (w.lead) w.lead = withDate(w.lead, now);
       out.push(w);
     } catch (e) {
       // 깨진 파일은 건너뛴다
@@ -908,5 +937,5 @@ function setLimit(n) {
 module.exports = {
   PORT, start, stop, status, address, onEvent, setPeers, setLimit, readLog, logDays, warmPrompts, recordEvent, leadWarmBody,
   // 테스트에서 쓴다
-  _internal: { promptOf, collectDelta, cleanAddress, userLead }
+  _internal: { promptOf, collectDelta, cleanAddress, userLead, withDate }
 };

@@ -288,6 +288,22 @@ function listen(server, port) {
   assert.deepStrictEqual(proxy.leadWarmBody('qwen38', [1, 2, 3, 9, 8, 7, 6, 5], [1, 2, 3, 4, 8]).prompt, [1, 2, 3, 9, 8, 7, 6]);
   assert.strictEqual(proxy.leadWarmBody('qwen38', [1, 2, 3, 9], [1, 2, 3, 4]), null, '뒤에 붙일 토큰이 모자라다');
   assert.strictEqual(proxy.leadWarmBody('qwen38', [5, 6, 7, 8, 9], [1, 2]), null, '겹치는 앞부분이 없다');
+  // 두 하네스의 날짜 형식을 모두 바꾼다.
+  assert.strictEqual(proxy._internal.withDate("a Today's date: Wed Sep 23 2026 b Today's date is 2026-09-23. c", new Date(2026, 0, 5)),
+    "a Today's date: Mon Jan 05 2026 b Today's date is 2026-01-05. c");
+  // 날짜만 다른 첫 턴은 한 파일에 남고, 예열에는 오늘 날짜로 나간다.
+  const sysDay = (d) => 'd'.repeat(5000) + `\n  Today's date: ${d}\n`;
+  const leadDay = (d) => `<system-reminder>\nToday's date is ${d}.\n</system-reminder>\n\n`;
+  await post({ model: 'qwen38', messages: [{ role: 'system', content: sysDay('Mon Sep 21 2026') }, { role: 'user', content: leadDay('2026-09-21') + '그제 질문' }], stream: true });
+  await new Promise((r) => setTimeout(r, 100));
+  await post({ model: 'qwen38', messages: [{ role: 'system', content: sysDay('Tue Sep 22 2026') }, { role: 'user', content: leadDay('2026-09-22') + '어제 질문' }], stream: true });
+  await new Promise((r) => setTimeout(r, 100));
+  const dated = (await proxy.warmPrompts()).filter((w) => w.messages[0].content[0] === 'd');
+  assert.strictEqual(dated.length, 1, `날짜만 다른 첫 턴이 파일 ${dated.length}개로 남았다`);
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  assert.strictEqual(dated[0].messages[0].content, sysDay(today.toDateString()));
+  assert.strictEqual(dated[0].lead, leadDay(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`));
 
   // 6-4) 벤치 시작은 본문을 그대로 넘기고, 조회는 결과를 준다.
   const br = await new Promise((resolve) => {
