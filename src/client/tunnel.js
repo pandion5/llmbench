@@ -203,6 +203,9 @@ function benchRun(opts) {
 function benchCancel() {
   return ask('/llmbench/bench/cancel', null, 'POST');
 }
+function benchApply() {
+  return ask('/llmbench/bench/apply', null, 'POST');
+}
 
 function serverStatus() {
   return ask('/llmbench/status');
@@ -231,5 +234,5 @@ module.exports = {
   installed, applyInvite, up, down, status, target, forget, conf, statePath, confPath, TUNNEL,
   serverStatus, serverLogDays, serverLog, serverInfo,
   serverStart, serverStop, serverUpdateCheck, serverUpdateApply,
-  benchInfo, benchRun, benchCancel
+  benchInfo, benchRun, benchCancel, benchApply
 };

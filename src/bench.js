@@ -404,8 +404,21 @@ async function runNcmoe(opts, cfg) {
   return lastResult;
 }
 
+// 준비 단계(설정 읽기, 모델 경로 찾기)에는 자식 프로세스가 없어서 busy()가 거짓이다.
+// 그 틈에 두 번째 벤치가 들어오지 않게 첫 await 전에 잠근다.
+let starting = false;
+
 async function run(opts, cfg) {
-  if (controller || benchChild) throw new Error('벤치마크가 이미 돌고 있음');
+  if (starting || controller || benchChild) throw new Error('벤치마크가 이미 돌고 있음');
+  starting = true;
+  try {
+    return await runInner(opts, cfg);
+  } finally {
+    starting = false;
+  }
+}
+
+async function runInner(opts, cfg) {
   // mode 'standard'면 llama-bench, 아니면 서버에 프롬프트를 보내는 체감 벤치
   if (opts && opts.mode === 'standard') return runStandard(opts, cfg);
   if (opts && opts.mode === 'tuning') return runTuning(opts, cfg);
@@ -670,7 +683,8 @@ async function measureModelBytesGB(cfg) {
     }
     // 3.6은 자동 로드를 켰을 때만 RAM을 같이 쓴다. 꺼 두면 합계에 넣지 않는다.
     const f36 = paths.qwen36 && paths.qwen36.file;
-    if (cfg.autoLoad36 && f36) bytes += (await fsp.stat(f36)).size;
+    // 3.6은 시작 때 올리지 않고, 서버가 한 번에 한 모델만 올리니 합산하지 않는다.
+    // cfg.autoLoad36은 예전 설정값이라 여기서는 보지 않는다.
     // MTP 헤드는 따로 폴더에 있어 위 반복에 안 잡힌다. 켰으면 더한다.
     if (cfg.mtp && cfg.mtpFile) {
       const head = path.join(path.dirname(path.dirname(f38 || '')), 'MTP', cfg.mtpFile);
@@ -699,7 +713,7 @@ function last() {
 }
 
 function busy() {
-  return !!(controller || benchChild);
+  return !!(starting || controller || benchChild);
 }
 
 function cancel() {
@@ -718,4 +732,21 @@ async function exportLast(dir) {
   return { path: file };
 }
 
-module.exports = { loadModeArgs, loadModeState, runBenchExe, run, cancel, exportLast, last, busy, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };
+// 앱을 다시 켰을 때 마지막 결과를 파일에서 되살린다. 원격 업데이트 뒤에도
+// 클라이언트가 결과를 보고 적용할 수 있어야 한다. 이 PC 이름으로 저장한 것 중 가장 최근 것.
+async function restoreLast(dir) {
+  if (lastResult) return lastResult;
+  const prefix = `${os.hostname()}-bench-`;
+  const files = (await fsp.readdir(dir).catch(() => []))
+    .filter((f) => f.startsWith(prefix) && f.endsWith('.json'))
+    .sort();
+  if (!files.length) return null;
+  try {
+    lastResult = JSON.parse(await fsp.readFile(path.join(dir, files[files.length - 1]), 'utf8'));
+  } catch (e) {
+    lastResult = null;
+  }
+  return lastResult;
+}
+
+module.exports = { loadModeArgs, loadModeState, runBenchExe, run, cancel, exportLast, restoreLast, last, busy, onProgress, computeVerdict, measureModelBytesGB, pCoreMask, BUILTIN_PROMPTS };

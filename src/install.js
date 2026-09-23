@@ -676,6 +676,12 @@ async function stepPreset(cfg) {
     'jinja = true',
     `load-mode = ${cfg.loadMode}`,
     `poll = ${cfg.poll}`,
+    // 프롬프트 캐시. 3.8은 하이브리드 모델이라 체크포인트가 있는 지점까지만 되감을 수 있다.
+    // 기본은 8192토큰 간격이라 짧은 턴은 체크포인트가 다 밀려나 전부 다시 읽는다. 촘촘히 둔다.
+    // 캐시 RAM 기본 8GB는 세 사람 대화가 길어지면 밀려나니 32GB로 늘린다.
+    'ctx-checkpoints = 64',
+    'checkpoint-min-step = 256',
+    'cache-ram = 32768',
     // cpu-strict는 0 또는 1만 받는다. true로 쓰면 인자 파싱에서 죽는다.
     ...(cfg.cpuMask ? [`cpu-mask = ${cfg.cpuMask}`, 'cpu-strict = 1'] : []),
     'temp = 1.0',
@@ -699,11 +705,22 @@ async function stepPreset(cfg) {
     'n-cpu-moe = 20',
     'temp = 0.7',
     'top-p = 0.8',
-    `load-on-startup = ${cfg.autoLoad36 ? 'true' : 'false'}`,
+    // 서버가 --models-max 1이라 시작 때 올릴 모델은 하나여야 한다. 둘이면 llama-server가 뜨지 않는다.
+    // 3.6은 필요할 때 요청이 오면 올라온다.
+    'load-on-startup = false',
     ''
   ].join('\n');
 
-  await fsp.writeFile(path.join(cfg.installDir, 'models.ini'), ini, 'utf8');
+  // 임시 파일에 다 쓴 뒤 바꿔 넣는다. 쓰는 중에 서버가 시작돼 반쪽 파일을 읽는 일을 막는다.
+  const target = path.join(cfg.installDir, 'models.ini');
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  await fsp.writeFile(tmp, ini, 'utf8');
+  try {
+    await fsp.rename(tmp, target);
+  } catch (e) {
+    await fsp.unlink(tmp).catch(() => {});
+    throw e;
+  }
   setStep('preset', { status: 'done', detail: 'models.ini 작성' });
 }
 
@@ -725,7 +742,7 @@ async function stepRunBat(cfg) {
     `cd /d "${bin}"`,
     'echo llama-server 라우터 기동. 두 모델 RAM 로드에 몇 분 걸림.',
     'echo 준비되면 llmbench 하네스 탭에서 코딩 CLI를 연다.',
-    `llama-server.exe --models-preset "${path.join(cfg.installDir, 'models.ini')}" --models-max 2 --host 127.0.0.1 --port 8080`,
+    `llama-server.exe --models-preset "${path.join(cfg.installDir, 'models.ini')}" --models-max 1 --host 127.0.0.1 --port 8080`,
     'pause',
     ''
   ].join('\r\n');

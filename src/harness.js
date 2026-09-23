@@ -25,17 +25,17 @@ const DEFS = [
     bin: 'openclaude',
     note: '기본. Claude Code 계열 CLI. 설정 파일 없이 환경변수로 llama-server를 가리킨다.',
     // 이 CLI는 OpenAI 호환 모드를 켜야 OPENAI_BASE_URL을 본다.
-    extraEnv: { CLAUDE_CODE_USE_OPENAI: '1' },
+    // 첨부 헤더는 요청마다 바뀌는 글을 시스템 프롬프트 맨 앞에 넣어 프롬프트 캐시를 깬다. 끈다.
+    // 기본 타임아웃 2분이면 캐시 미스 때(프롬프트 전부 읽기 70~120초) 끊고 다시 보낸다. 10분으로 늘린다.
+    // git 상태 스냅샷은 세션마다 달라서 새 세션 첫 턴이 캐시를 못 탄다. 커밋 안내문과 함께 뺀다.
+    extraEnv: {
+      CLAUDE_CODE_USE_OPENAI: '1',
+      CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+      CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: '1',
+      API_TIMEOUT_MS: '600000'
+    },
     // 켜면 파일을 고칠 때마다 묻지 않는다. 대신 확인 없이 고치고 명령을 돌린다.
     skipFlag: '--dangerously-skip-permissions'
-  },
-  {
-    id: 'qwen-code',
-    name: 'Qwen Code',
-    npm: '@qwen-code/qwen-code',
-    bin: 'qwen',
-    note: 'Qwen3-Coder용 CLI. ~/.qwen/settings.json에 llama-server를 OpenAI 호환 공급자로 등록한다.',
-    skipFlag: '--yolo'
   },
   {
     id: 'opencode',
@@ -62,8 +62,11 @@ function currentApiKey() {
 // OpenClaude 상태줄의 달러 값은 실제 청구가 아니다. 내장 단가표에 Claude 모델만
 // 있어서 모르는 이름은 입력 100만 토큰당 5달러, 출력 25달러로 계산해 버린다.
 // 로컬 모델은 돈이 안 드니 그 모델의 단가를 0으로 적어 둔다.
+// OpenClaude는 Claude Code와 폴더를 나눠 쓴다. 설정은 ~/.openclaude/settings.json, 전역 상태는 ~/.openclaude.json.
+const OPENCLAUDE_DIR = path.join(os.homedir(), '.openclaude');
+
 async function writeClaudePricing(model) {
-  const dir = path.join(os.homedir(), '.claude');
+  const dir = OPENCLAUDE_DIR;
   const file = path.join(dir, 'settings.json');
   let cur = {};
   try {
@@ -85,6 +88,7 @@ async function writeClaudePricing(model) {
   });
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(file, JSON.stringify(cur, null, 2), 'utf8');
+  await writeOpenclaudeGlobal();
   return file;
 }
 
@@ -185,63 +189,33 @@ function resolveWorkDir(cfg, workDir) {
   return dir;
 }
 
-function qwenSettingsPath() {
-  return path.join(os.homedir(), '.qwen', 'settings.json');
-}
-
-// llama-server를 OpenAI 호환 공급자로 등록한 설정을 기존 값에 얹는다.
-// 사용자가 쓰던 다른 키는 그대로 두고 같은 id의 항목만 갱신한다.
-function mergeQwenSettings(prev, model, baseUrl) {
-  const url = baseUrl || BASE_URL;
-  const entries = [
-    { id: 'qwen38', name: 'Qwen3.8 (llama-server)', baseUrl: url, envKey: 'OPENAI_API_KEY' },
-    { id: 'qwen36', name: 'Qwen3.6 (llama-server)', baseUrl: url, envKey: 'OPENAI_API_KEY' }
-  ];
-  const base = prev && typeof prev === 'object' ? prev : {};
-  const providers = { ...(base.modelProviders || {}) };
-  const openai = Array.isArray(providers.openai) ? providers.openai.slice() : [];
-  for (const e of entries) {
-    const i = openai.findIndex((x) => x && x.id === e.id);
-    if (i >= 0) openai[i] = { ...openai[i], ...e };
-    else openai.push(e);
-  }
-  providers.openai = openai;
-  const security = { ...(base.security || {}) };
-  security.auth = { ...(security.auth || {}), selectedType: 'openai' };
-  return {
-    ...base,
-    modelProviders: providers,
-    security,
-    model: { ...(base.model || {}), name: model }
-  };
-}
-
-// [전언: Qwen Code 공식 문서] 설정 파일은 ~/.qwen/settings.json.
-// OpenCode 전역 설정. llama-server를 프로바이더로 등록하고 plan은 3.8, build는 3.6을 쓴다.
+// OpenCode 전역 설정. llama-server를 프로바이더로 등록한다. plan과 build 모두 고른 모델을 쓴다.
+// 서버가 한 번에 한 모델만 올리니 에이전트별로 모델이 다르면 오갈 때마다 다시 올린다.
 // 기존 파일은 .bak으로 남기고 통째로 덮어쓴다. 사용자가 손본 다른 프로바이더는 보존하지 않는다.
-function opencodeConfig(ctx, model, baseUrl) {
+function opencodeConfig(ctx, model, baseUrl, apiKey) {
   return {
     $schema: 'https://opencode.ai/config.json',
     provider: {
       'llama.cpp': {
         npm: '@ai-sdk/openai-compatible',
         name: 'llama-server (local)',
-        options: { baseURL: baseUrl || BASE_URL },
+        // OpenCode는 환경변수를 안 보고 여기 적힌 키를 쓴다. 비면 프록시가 401을 돌려준다.
+        options: Object.assign({ baseURL: baseUrl || BASE_URL }, apiKey ? { apiKey } : {}),
         models: {
-          qwen38: { name: 'Qwen3.8 Flash Next (계획/리뷰)', limit: { context: ctx, output: 16384 } },
-          qwen36: { name: 'Qwen3.6 35B (실행)', limit: { context: ctx, output: 16384 } }
+          qwen38: { name: 'Qwen3.8 Flash Next', limit: { context: ctx, output: 16384 } },
+          qwen36: { name: 'Qwen3.6 35B', limit: { context: ctx, output: 16384 } }
         }
       }
     },
     model: `llama.cpp/${model}`,
     agent: {
-      plan: { model: 'llama.cpp/qwen38' },
-      build: { model: 'llama.cpp/qwen36' }
+      plan: { model: `llama.cpp/${model}` },
+      build: { model: `llama.cpp/${model}` }
     }
   };
 }
 
-async function writeOpencodeConfig(ctx, model, baseUrl) {
+async function writeOpencodeConfig(ctx, model, baseUrl, apiKey) {
   const dir = path.join(os.homedir(), '.config', 'opencode');
   const file = path.join(dir, 'opencode.json');
   await fsp.mkdir(dir, { recursive: true });
@@ -250,23 +224,26 @@ async function writeOpencodeConfig(ctx, model, baseUrl) {
   } catch {
     // 처음이면 백업할 파일이 없다
   }
-  await fsp.writeFile(file, JSON.stringify(opencodeConfig(ctx, model, baseUrl), null, 2), 'utf8');
+  await fsp.writeFile(file, JSON.stringify(opencodeConfig(ctx, model, baseUrl, apiKey), null, 2), 'utf8');
   return file;
 }
 
-// 기존 파일이 있으면 .bak으로 한 부 남기고 병합한다.
-async function writeQwenSettings(model, baseUrl) {
-  const file = qwenSettingsPath();
-  await fsp.mkdir(path.dirname(file), { recursive: true });
-  let prev = null;
+// OpenClaude 전역 상태 파일. knowledgeGraph가 켜져 있으면 둘째 턴부터 시스템 프롬프트 끝에
+// "MULTI-TURN CONTEXT TRACKING"과 "RETRIEVED MEMORY" 블록을 턴마다 다르게 써 넣는다. 그러면
+// 프롬프트 앞부분이 매 턴 바뀌어 llama-server 캐시를 하나도 못 타고 2만 토큰을 다시 읽는다. 끈다.
+// 이 파일에는 로그인 상태도 들어 있으니 읽은 것에 한 키만 얹어 쓴다. 깨진 파일이면 건드리지 않는다.
+async function writeOpenclaudeGlobal() {
+  const file = path.join(os.homedir(), '.openclaude.json');
+  let cur = {};
   try {
-    const raw = await fsp.readFile(file, 'utf8');
-    await fsp.writeFile(`${file}.bak`, raw, 'utf8');
-    prev = JSON.parse(raw);
-  } catch {
-    // 파일이 없거나 JSON이 깨졌으면 새로 만든다
+    cur = JSON.parse(await fsp.readFile(file, 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw new Error(`.openclaude.json을 읽지 못했다: ${e.message}`);
   }
-  await fsp.writeFile(file, JSON.stringify(mergeQwenSettings(prev, model, baseUrl), null, 2), 'utf8');
+  if (!cur || typeof cur !== 'object' || Array.isArray(cur)) throw new Error('.openclaude.json 모양이 객체가 아니다');
+  if (cur.knowledgeGraphEnabled === false) return file;
+  cur.knowledgeGraphEnabled = false;
+  await fsp.writeFile(file, JSON.stringify(cur, null, 2), 'utf8');
   return file;
 }
 
@@ -288,8 +265,7 @@ async function launchTerminal(id, opts, cfg) {
   }
 
   try {
-    if (d.id === 'qwen-code') log(`Qwen Code 설정 갱신: ${await writeQwenSettings(model)}`);
-    if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig(cfg.ctx, model)}`);
+    if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig(cfg.ctx, model, undefined, currentApiKey())}`);
     if (d.id === 'openclaude') log(`비용 표시 0으로 설정: ${await writeClaudePricing(model)}`);
   } catch (e) {
     return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
@@ -338,8 +314,7 @@ async function launchRemote(id, opts, target) {
 
   const v1 = `${target.baseUrl}/v1`;
   try {
-    if (d.id === 'qwen-code') log(`Qwen Code 설정 갱신: ${await writeQwenSettings(model, v1)}`);
-    if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig((opts && opts.ctx) || 65536, model, v1)}`);
+    if (d.id === 'opencode') log(`OpenCode 설정 갱신: ${await writeOpencodeConfig((opts && opts.ctx) || 65536, model, v1, target.apiKey)}`);
     if (d.id === 'openclaude') log(`비용 표시 0으로 설정: ${await writeClaudePricing(model)}`);
   } catch (e) {
     return { ok: false, error: `설정 파일을 쓰지 못함: ${e.message}` };
@@ -387,8 +362,6 @@ module.exports = {
   launchRemote,
   launchTerminal,
   onLog,
-  mergeQwenSettings,
   opencodeConfig,
-  qwenSettingsPath,
   DEFS
 };

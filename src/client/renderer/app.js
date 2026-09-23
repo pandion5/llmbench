@@ -355,7 +355,7 @@
     rows.forEach(function (pair) {
       var r = pair[1];
       var tr = document.createElement('tr');
-      [pair[0], r.who, r.model || '기본', msText(r.waitMs), msText(r.runMs), String(r.tokens || 0)]
+      [pair[0] === '처리 중' ? (stageText(r) || '처리 중') : pair[0], r.who, r.model || '기본', msText(r.waitMs), msText(r.runMs), String(r.tokens || 0)]
         .forEach(function (v) {
           var td = document.createElement('td');
           td.textContent = v;
@@ -631,12 +631,14 @@
 
   function benchRenderLast(last) {
     if (!last) {
+      $('#bench-apply-row').hidden = true;
       setText('#bench-note', '아직 결과가 없다.');
       benchTable([], []);
       return;
     }
     var when = new Date(last.ts);
     var stamp = isNaN(when.getTime()) ? '' : ' · ' + when.toLocaleString();
+    $('#bench-apply-row').hidden = !(last.mode === 'ncmoe' && last.ncmoe && last.model === 'qwen38');
     if (last.mode === 'ncmoe' && last.ncmoe) {
       var t = last.ncmoe;
       setText('#bench-note', last.model + ' · ' + t.gguf + stamp + ' · 프롬프트가 가장 빠른 값: 층 ' + t.best.ncmoe +
@@ -700,6 +702,14 @@
       setText('#bench-msg', '시작하지 못했다: ' + errText(err));
     });
   });
+  $('#bench-apply').addEventListener('click', function () {
+    if (!confirm('서버 PC 설정의 CPU 전문가 층을 벤치에서 가장 빨랐던 값으로 바꾸고 models.ini를 다시 쓴다. 서버를 다시 켜야 반영된다. 진행할까?')) return;
+    window.api.usage.benchApply().then(function (r) {
+      setText('#bench-msg', 'CPU 전문가 층 ' + r.ncmoe38 + '으로 저장했다. 서버를 다시 켜면 반영된다.');
+    }).catch(function (err) {
+      setText('#bench-msg', '적용하지 못했다: ' + errText(err));
+    });
+  });
   $('#bench-cancel').addEventListener('click', function () {
     window.api.usage.benchCancel().then(function () {
       setText('#bench-msg', '중지하라고 보냈다.');
@@ -708,6 +718,32 @@
       setText('#bench-msg', '중지하지 못했다: ' + errText(err));
     });
   });
+
+
+  // 서버가 지금 무엇을 하는지 한 줄로. 하네스 스피너는 "5s"만 보여 줘서 여기서 채운다.
+  function stageText(r) {
+    if (r.stage === 'prompt') return '프롬프트 읽는 중 ' + (r.promptPct == null ? '' : r.promptPct + '%') + (r.promptTokens ? ' (' + r.promptTokens.toLocaleString() + '토큰)' : '');
+    if (r.stage === 'gen') return '답 쓰는 중 ' + (r.tokens || 0) + '토큰';
+    if (r.stage === 'start') return r.runMs > 3000 ? '모델 올리는 중 ' + msText(r.runMs) : '시작하는 중';
+    return '';
+  }
+  function termStatusRender(st) {
+    var el = $('#term-status');
+    el.textContent = '';
+    if (!st || st.error) { el.textContent = st && st.error ? '서버: ' + st.error : ''; return; }
+    if (!st.running.length && !st.waiting.length) { el.textContent = '서버: 들어온 요청 없음'; return; }
+    var parts = st.running.map(function (r) { return r.who + ' 요청 ' + stageText(r); });
+    if (st.waiting.length) parts.push('기다리는 요청 ' + st.waiting.length + '건');
+    var strong = document.createElement('span');
+    strong.className = 'busy';
+    strong.textContent = '서버: ' + parts.join(' · ');
+    el.appendChild(strong);
+  }
+  function termStatusTick() {
+    if ($('#term-card').hidden) return;
+    window.api.usage.status().then(termStatusRender).catch(function () {});
+  }
+  setInterval(termStatusTick, 2000);
 
   function usageStatus() {
     return window.api.usage.status().then(usageRender).catch(function (err) {

@@ -44,7 +44,6 @@
         <label for="chat-model">모델</label>
         <select id="chat-model">
           <option value="qwen38">qwen38</option>
-          <option value="qwen36">qwen36</option>
         </select>
         <button type="button" class="btn btn-sm" id="chat-clear">새 대화</button>
         <span class="hint" id="chat-stat"></span>
@@ -74,12 +73,12 @@
         <input type="text" id="harness-workdir" placeholder="비우면 프로그램 옆 workspace" spellcheck="false">
         <button type="button" class="btn btn-sm" id="harness-pick">고르기</button>
         <label for="harness-model">모델</label>
+        <!-- 3.6은 뺐다. 서버가 한 번에 한 모델만 올려서 3.6을 고르면 다른 사람 3.8이 내려간다. -->
         <select id="harness-model">
           <option value="qwen38">qwen38</option>
-          <option value="qwen36">qwen36</option>
         </select>
         <label for="harness-skip">허가 묻지 않기</label>
-        <span class="form-check"><input type="checkbox" id="harness-skip"></span>
+        <span class="form-check"><input type="checkbox" id="harness-skip" checked></span>
       </div>
       <p class="hint">허가 묻지 않기를 켜면 하네스가 확인 없이 파일을 고치고 명령을 돌린다. 작업 폴더를 확인하고 켠다.</p>
       <p class="hint" id="harness-msg" aria-live="polite"></p>
@@ -91,6 +90,7 @@
           <button type="button" class="btn btn-sm" id="term-kill">종료</button>
         </div>
         <div id="term-host"></div>
+        <p class="term-status" id="term-status" aria-live="polite"></p>
       </div>
 
       <div class="card">
@@ -176,6 +176,10 @@
         </div>
         <pre class="log" id="bench-progress" hidden></pre>
         <p class="hint" id="bench-note"></p>
+        <div class="row" id="bench-apply-row" hidden>
+          <button type="button" class="btn btn-sm" id="bench-apply">가장 빠른 값을 서버 설정에 적용</button>
+          <span class="hint">적용하면 models.ini가 바뀐다. 서버를 다시 켜야 반영된다.</span>
+        </div>
         <table class="grid" id="bench-table" hidden>
           <thead><tr id="bench-head"></tr></thead>
           <tbody id="bench-rows"></tbody>

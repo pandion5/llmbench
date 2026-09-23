@@ -224,6 +224,10 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .event-who { min-width: 80px; }
 .event-fail { color: #e0868a; }
 
+/* 터미널 아래 한 줄. 하네스 스피너가 도는 동안 서버가 뭘 하는지 보여준다. */
+.term-status { margin: 6px 0 0; min-height: 18px; font-size: 13px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.term-status .busy { color: var(--fg); }
+
 .log-row { cursor: pointer; }
 .log-row:hover td { background: var(--bg-3); }
 .log-row.is-open td { background: var(--bg-3); }

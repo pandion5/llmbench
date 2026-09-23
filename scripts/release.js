@@ -47,8 +47,10 @@ fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 console.log(`package.json version = ${version}`);
 
 // dist 폴더 자체는 탐색기가 열고 있으면 못 지운다. 안에 든 것만 치운다.
+// 이 스크립트가 만드는 것만 지운다. 클라이언트를 dist 안에 풀어 쓰던 PC에서 앱과 workspace가 같이 지워진 적이 있다.
 fs.mkdirSync(DIST, { recursive: true });
 for (const name of fs.readdirSync(DIST)) {
+  if (!/^llmbench-.+\.zip$|^update\.json$|^pack$/.test(name)) continue;
   try {
     fs.rmSync(path.join(DIST, name), { recursive: true, force: true });
   } catch (e) {

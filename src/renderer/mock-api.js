@@ -444,8 +444,6 @@
   // ---------- 하네스 ----------
 
   var harnesses = [
-    { id: 'qwen-code', name: 'Qwen Code', npm: '@qwen-code/qwen-code', installed: false, version: null,
-      note: 'Qwen 계열에 맞춘 CLI 에이전트. 로컬 llama-server를 OpenAI 호환으로 붙인다.' },
     { id: 'opencode', name: 'OpenCode', npm: 'opencode-ai', installed: true, version: '0.4.12',
       note: '터미널 TUI 에이전트. 설치 단계에서 전역 설정을 이미 만들어 둔다.' }
   ];

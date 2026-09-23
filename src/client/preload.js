@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('api', {
     bench: () => call('usage:bench'),
     benchRun: (opts) => call('usage:benchRun', opts),
     benchCancel: () => call('usage:benchCancel'),
+    benchApply: () => call('usage:benchApply'),
     days: () => call('usage:days'),
     log: (day) => call('usage:log', day)
   },

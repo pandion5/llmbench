@@ -116,6 +116,7 @@ function killTree(p) {
 
 async function start(cfg, opts) {
   const apiKey = (opts && opts.apiKey) || null;
+  const onReady = (opts && opts.onReady) || null;
   if (child && child.exitCode === null) {
     // 이미 떠 있는 서버는 인자를 바꿀 수 없다. 키가 달라졌으면 끄고 다시 띄운다.
     if (apiKey === currentApiKey) return status();
@@ -146,7 +147,8 @@ async function start(cfg, opts) {
   // 슬롯 수만큼 동시에 받는다. 컨텍스트는 슬롯 수로 나뉜다.
   const slots = Math.max(1, Number(cfg.slots) || 1);
   const args = [
-    '--models-preset', preset, '--models-max', '2',
+    // 한 번에 한 모델만. 둘이 같이 VRAM에 오르면 3.8의 CPU 전문가 층 예산을 넘어 프롬프트 처리가 3배 느려진다.
+    '--models-preset', preset, '--models-max', '1',
     '--host', HOST, '--port', String(PORT),
     '--parallel', String(slots),
     // 프록시 화면에서 슬롯과 처리 속도를 읽으려면 이 둘이 켜져 있어야 한다.
@@ -190,6 +192,7 @@ async function start(cfg, opts) {
     state.state = 'ready';
     state.error = null;
     emit();
+    if (onReady) onReady().catch((e) => console.error('준비 뒤 작업 실패:', e.message));
   });
 
   return status();

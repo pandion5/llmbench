@@ -9,6 +9,8 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const http = require('http');
+const crypto = require('crypto');
+const { StringDecoder } = require('string_decoder');
 const path = require('path');
 
 const PORT = 8080;
@@ -39,8 +41,148 @@ const ACTION_NAMES = {
   '/llmbench/update/check': '업데이트 확인',
   '/llmbench/update/apply': '앱 업데이트',
   '/llmbench/bench/run': '벤치 시작',
-  '/llmbench/bench/cancel': '벤치 중지'
+  '/llmbench/bench/apply': '벤치 결과 적용',
+  '/llmbench/bench/cancel': '벤치 중지',
+  '/llmbench/warm/clear': '예열 파일 비우기'
 };
+
+// 하네스가 보내는 요청은 시스템 프롬프트와 도구 정의만 1만 토큰이 넘고 매번 같다.
+// 서버를 다시 켠 뒤 첫 사람이 1분 넘게 기다리지 않게, 하네스별 시스템 프롬프트와
+// 도구 정의를 파일에 두고 예열에 쓴다. 사람 질문은 남기지 않는다.
+const WARM_MIN_CHARS = 4000;
+const WARM_MAX_FILES = 6;
+const warmSeen = new Map();
+
+// 하네스마다 시스템 프롬프트가 다르니 파일도 따로 둔다. 모델 이름과 시스템 프롬프트 전체 해시.
+// 같은 하네스라도 실행 방식(대화형, -p)에 따라 뒷부분이 달라서 앞부분만 보면 서로 덮어쓴다.
+function warmKey(model, messages) {
+  const head = textOf(messages[0].content);
+  const hash = crypto.createHash('sha1').update(head).digest('hex').slice(0, 8);
+  return `${model.replace(/[^\w.-]/g, '_')}-${hash}`;
+}
+
+function warmDir() {
+  return opts && opts.logDir ? path.join(opts.logDir, '..', 'warm') : null;
+}
+
+// 프롬프트 렌더링에 영향을 주는 요청 필드. 예열 요청에 그대로 실어야 토큰이 같다.
+const WARM_KEEP_FIELDS = ['tools', 'tool_choice', 'chat_template_kwargs', 'reasoning_effort', 'response_format'];
+
+// 예열에 보낼 대화. 시스템 프롬프트 뒤 질문 칸은 "."로 채운다.
+// 이 모델은 캐시를 사용자 메시지가 시작하는 곳까지만 되살리고 질문 칸은 매번 새로 읽는다.
+// 그래서 사람 질문을 넣어 예열해도 얻는 것이 없다. "."로 바꿔도 다음 질문이 읽는 토큰 수가 같았다.
+// 사용자 메시지를 아예 빼는 방식은 시험하지 않았다.
+function warmMessages(messages) {
+  return [messages[0], { role: 'user', content: '.' }];
+}
+
+async function keepSystemPrompt(body) {
+  const dir = warmDir();
+  if (!dir || !body || !Array.isArray(body.messages) || typeof body.model !== 'string') return;
+  if (body.messages.some((m) => !m || typeof m !== 'object' || typeof m.role !== 'string')) return;
+  let lastUser = -1;
+  for (let i = body.messages.length - 1; i >= 0; i--) {
+    if (body.messages[i] && body.messages[i].role === 'user') { lastUser = i; break; }
+  }
+  // 첫 턴만 쓴다. 대화가 이어지면 시스템 프롬프트에 그 세션 내용을 덧붙이는 하네스가 있다.
+  if (lastUser !== 1 || body.messages[0].role !== 'system') return;
+  // 질문이 빠지니 같은 하네스의 첫 턴은 내용이 같다. 새 세션마다 파일을 다시 쓰지 않는다.
+  const head = { messages: warmMessages(body.messages) };
+  for (const k of WARM_KEEP_FIELDS) if (body[k] !== undefined) head[k] = body[k];
+  const text = JSON.stringify(head);
+  const key = warmKey(body.model, body.messages);
+  if (text.length < WARM_MIN_CHARS) return;
+  const file = path.join(dir, `${key}.json`);
+  if (warmSeen.get(key) === text) {
+    // 같은 내용이면 다시 쓰지 않고 최근 사용 표시만 갱신한다. 예열 순서와 정리 기준이 이 시각이다.
+    // 파일이 밖에서 지워졌으면 갱신이 실패하니 그때는 아래로 내려가 다시 쓴다.
+    const now = new Date();
+    const touched = await fsp.utimes(file, now, now).then(() => true, () => false);
+    if (touched) return;
+    warmSeen.delete(key);
+  }
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(file, JSON.stringify(Object.assign({ model: body.model, at: new Date().toISOString() }, head)), 'utf8');
+    warmSeen.set(key, text);
+    // 오래된 것부터 지워 개수를 맞춘다. 안 쓰는 하네스 예열에 시간을 쓰지 않게.
+    const files = (await fsp.readdir(dir)).filter((f) => f.endsWith('.json'));
+    if (files.length > WARM_MAX_FILES) {
+      const stats = await Promise.all(files.map(async (f) => ({ f, t: (await fsp.stat(path.join(dir, f))).mtimeMs })));
+      stats.sort((a, b) => a.t - b.t);
+      for (const old of stats.slice(0, stats.length - WARM_MAX_FILES)) {
+        await fsp.unlink(path.join(dir, old.f)).catch(() => {});
+        warmSeen.delete(old.f.replace(/\.json$/, ''));
+      }
+    }
+  } catch (e) {
+    // 못 남겨도 대화에는 지장 없다
+  }
+}
+
+async function warmPrompts() {
+  const dir = warmDir();
+  if (!dir) return [];
+  const names = await fsp.readdir(dir).catch(() => []);
+  const out = [];
+  // 최근에 쓴 것부터. 예열이 오래 걸리니 자주 쓰는 하네스가 먼저 준비된다.
+  const stats = await Promise.all(names.filter((f) => f.endsWith('.json')).map(async (f) => ({ f, t: (await fsp.stat(path.join(dir, f)).catch(() => ({ mtimeMs: 0 }))).mtimeMs })));
+  stats.sort((a, b) => b.t - a.t);
+  for (const n of stats.map((x) => x.f)) {
+    try {
+      const w = JSON.parse(await fsp.readFile(path.join(dir, n), 'utf8'));
+      // 예전 파일에는 사람 질문이 들어 있다. 보낼 때도 질문 칸을 비운다.
+      if (Array.isArray(w.messages) && w.messages.length) w.messages = warmMessages(w.messages);
+      out.push(w);
+    } catch (e) {
+      // 깨진 파일은 건너뛴다
+    }
+  }
+  return out;
+}
+
+// 예열 파일 목록. 서버 PC 앞에 가지 않고 무엇이 예열되는지 본다.
+async function warmList() {
+  const dir = warmDir();
+  if (!dir) return [];
+  const names = (await fsp.readdir(dir).catch(() => [])).filter((f) => f.endsWith('.json'));
+  const out = [];
+  for (const f of names) {
+    try {
+      const st = await fsp.stat(path.join(dir, f));
+      const w = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8'));
+      const msgs = Array.isArray(w.messages) ? w.messages : [];
+      out.push({
+        file: f,
+        model: w.model,
+        at: w.at,
+        used: st.mtime.toISOString(),
+        size: st.size,
+        tools: Array.isArray(w.tools) ? w.tools.length : 0,
+        system: msgs[0] ? textOf(msgs[0].content).slice(0, 60) : ''
+      });
+    } catch (e) {
+      out.push({ file: f, error: e.message });
+    }
+  }
+  out.sort((a, b) => String(b.used || '').localeCompare(String(a.used || '')));
+  return out;
+}
+
+// 예열 파일을 모두 지운다. 시험 삼아 띄운 세션의 첫 턴이 쌓여 실제 하네스 예열을 밀어낼 때 쓴다.
+// 지운 뒤 각 하네스의 다음 첫 턴이 다시 남긴다.
+async function warmClear() {
+  const dir = warmDir();
+  let removed = 0;
+  if (dir) {
+    const names = (await fsp.readdir(dir).catch(() => [])).filter((f) => f.endsWith('.json'));
+    for (const f of names) {
+      if (await fsp.unlink(path.join(dir, f)).then(() => true, () => false)) removed++;
+    }
+  }
+  warmSeen.clear();
+  return { ok: true, removed };
+}
 
 async function recordEvent(ev) {
   events.unshift(ev);
@@ -78,6 +220,17 @@ function status() {
   };
 }
 
+// start: 아직 아무 조각도 안 왔다. 모델을 올리는 중일 수 있다.
+// prompt: 프롬프트를 읽고 있다. gen: 답을 쓰고 있다. done: 끝났다.
+function stageOf(j) {
+  if (j.endedAt) return 'done';
+  if (!j.startedAt) return 'wait';
+  if (j.tokens > 0 || j.answer || j.reasoning || (j.tools && j.tools.length)) return 'gen';
+  if (j.progress && j.progress.processed < j.progress.total) return 'prompt';
+  if (j.progress) return 'gen';
+  return 'start';
+}
+
 function view(j) {
   return {
     id: j.id,
@@ -94,7 +247,10 @@ function view(j) {
     reasoningChars: j.reasoning ? j.reasoning.length : 0,
     toolCalls: j.tools ? j.tools.length : 0,
     tokens: j.tokens || 0,
-    promptTokens: j.promptTokens || 0,
+    // 어느 단계인지. 화면에서 "프롬프트 읽는 중 61%" 같은 문구를 만든다.
+    stage: stageOf(j),
+    promptPct: j.progress && j.progress.total ? Math.round((j.progress.processed / j.progress.total) * 100) : null,
+    promptTokens: j.promptTokens || (j.progress ? j.progress.total : 0),
     promptMs: j.promptMs || 0,
     genMs: j.genMs || 0,
     canceled: !!j.canceled,
@@ -159,6 +315,7 @@ async function writeLog(job) {
 // 하루치 기록을 읽는다. 화면에서 지난 대화를 볼 때 쓴다.
 async function readLog(day) {
   if (!opts || !opts.logDir) return [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day))) return [];
   const file = path.join(opts.logDir, `chat-${day}.jsonl`);
   let text = '';
   try {
@@ -216,10 +373,30 @@ function textOf(content) {
   return '';
 }
 
+// 진행률 말고는 아무것도 없는 조각인지. 이런 조각은 llama-server가 우리 요청으로 붙인 것이다.
+function isProgressOnly(json) {
+  if (!json.prompt_progress) return false;
+  if (json.usage || json.timings) return false;
+  for (const c of json.choices || []) {
+    if (!c) continue;
+    if (c.finish_reason || typeof c.text === 'string') return false;
+    const d = c.delta || c.message;
+    if (d && (d.content || d.reasoning_content || d.tool_calls || d.role)) return false;
+  }
+  return true;
+}
+
 // 스트리밍 조각에서 답 글자를 모은다. 생각 과정은 답과 나눠 둔다.
 // 토큰 수와 걸린 시간이 실린 마지막 조각은 choices가 빈 배열로 오니
 // choices를 보기 전에 먼저 챙긴다.
 function collectDelta(json, job) {
+  if (json.prompt_progress && json.prompt_progress.total) {
+    job.progress = {
+      total: json.prompt_progress.total,
+      processed: json.prompt_progress.processed || 0,
+      cache: json.prompt_progress.cache || 0
+    };
+  }
   if (json.usage && json.usage.completion_tokens) job.tokens = json.usage.completion_tokens;
   if (json.usage && json.usage.prompt_tokens) job.promptTokens = json.usage.prompt_tokens;
   // llama.cpp는 마지막 조각에 걸린 시간을 나눠서 준다. 프롬프트를 읽는 데 쓴 시간과
@@ -275,6 +452,9 @@ function finish(job) {
 
 // ---------- 요청 처리 ----------
 
+// 스트리밍이 아닌 응답을 기록하려고 모아 두는 한도. 넘으면 전달만 하고 기록은 건너뛴다.
+const RESPONSE_LOG_MAX = 8 * 1024 * 1024;
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const parts = [];
@@ -310,39 +490,69 @@ function forward(req, res, bodyBuf, job) {
       headers
     },
     (upRes) => {
-      res.writeHead(upRes.statusCode || 502, upRes.headers);
+      const isSse = String(upRes.headers['content-type'] || '').includes('text/event-stream');
+      const headers = Object.assign({}, upRes.headers);
+      // 진행률 조각을 걷어 내면 길이가 줄어드니 SSE는 길이 헤더를 빼고 chunked로 보낸다.
+      if (job && isSse) delete headers['content-length'];
+      res.writeHead(upRes.statusCode || 502, headers);
       if (!job) {
         upRes.pipe(res);
         return;
       }
-      // 흘러가는 조각을 그대로 내보내면서 답을 모은다.
+      if (!isSse) {
+        // 스트리밍이 아니면 원본을 그대로 흘리고, 기록용으로만 한도 안에서 모아 끝에 한 번 읽는다.
+        const parts = [];
+        let total = 0;
+        upRes.on('data', (chunk) => {
+          res.write(chunk);
+          total += chunk.length;
+          if (total <= RESPONSE_LOG_MAX) parts.push(chunk);
+        });
+        upRes.on('end', () => {
+          if (total > RESPONSE_LOG_MAX) {
+            job.error = `응답이 ${RESPONSE_LOG_MAX}바이트를 넘어 기록하지 않음`;
+          } else {
+            try {
+              collectDelta(JSON.parse(Buffer.concat(parts).toString('utf8')), job);
+            } catch (e) {
+              // JSON이 아니면 둔다
+            }
+          }
+          res.end();
+          finish(job);
+        });
+        upRes.on('error', (e) => {
+          job.error = e.message;
+          res.end();
+          finish(job);
+        });
+        return;
+      }
+      // 줄 단위로 읽어 답을 모으고 내보낸다. 진행률만 실린 조각은 우리가 붙이라고 한 것이라
+      // 하네스에는 넘기지 않는다. 글자가 조각 경계에서 갈려도 깨지지 않게 디코더를 쓴다.
+      const decoder = new StringDecoder('utf8');
       let rest = '';
       upRes.on('data', (chunk) => {
-        res.write(chunk);
-        rest += chunk.toString('utf8');
+        rest += decoder.write(chunk);
         const lines = rest.split('\n');
         rest = lines.pop() || '';
         for (const line of lines) {
           const t = line.trim();
-          if (!t.startsWith('data:')) continue;
-          const payload = t.slice(5).trim();
-          if (payload === '[DONE]') continue;
-          try {
-            collectDelta(JSON.parse(payload), job);
-          } catch (e) {
-            // 조각이 깨졌으면 건너뛴다
+          if (t.startsWith('data:') && t.slice(5).trim() !== '[DONE]') {
+            try {
+              const json = JSON.parse(t.slice(5).trim());
+              collectDelta(json, job);
+              if (isProgressOnly(json)) continue;
+            } catch (e) {
+              // 조각이 깨졌으면 그대로 넘긴다
+            }
           }
+          res.write(line + '\n');
         }
       });
       upRes.on('end', () => {
-        // 스트리밍이 아니면 한 덩어리로 왔으니 여기서 한 번 읽는다.
-        if (!job.answer && rest.trim()) {
-          try {
-            collectDelta(JSON.parse(rest), job);
-          } catch (e) {
-            // JSON이 아니면 둔다
-          }
-        }
+        rest += decoder.end();
+        if (rest) res.write(rest);
         res.end();
         finish(job);
       });
@@ -402,7 +612,10 @@ async function handle(req, res) {
     '/llmbench/update/check': { fn: control.updateCheck, post: false },
     '/llmbench/update/apply': { fn: control.updateApply, post: true },
     '/llmbench/bench/run': { fn: control.benchRun, post: true },
-    '/llmbench/bench/cancel': { fn: control.benchCancel, post: true }
+    '/llmbench/bench/cancel': { fn: control.benchCancel, post: true },
+    '/llmbench/bench/apply': { fn: control.benchApply, post: true },
+    '/llmbench/warm': { fn: warmList, post: false },
+    '/llmbench/warm/clear': { fn: warmClear, post: true }
   };
   if (actions[urlPath]) {
     if (!checkKey(req)) return unauthorized(res);
@@ -422,8 +635,12 @@ async function handle(req, res) {
     try {
       const buf = await readBody(req);
       if (buf.length) payload = JSON.parse(buf.toString('utf8'));
+      if (payload !== null && (typeof payload !== 'object' || Array.isArray(payload))) throw new Error('본문은 JSON 객체여야 한다');
     } catch (e) {
-      payload = null;
+      // 본문이 깨졌으면 동작을 시키지 않는다. 벤치가 기본값으로 시작되는 일을 막는다.
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: { message: `본문을 읽지 못함: ${e.message}` } }));
+      return;
     }
     let out;
     const who = whoIs(address);
@@ -436,7 +653,9 @@ async function handle(req, res) {
       res.end(JSON.stringify({ error: { message: e.message } }));
       return;
     }
-    if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: true, error: null });
+    // 예외 없이 { ok: false }로 실패를 돌려주는 동작도 실패로 남긴다.
+    const failed = out && out.ok === false;
+    if (a.post) recordEvent({ at: new Date().toISOString(), who, address, action: ACTION_NAMES[urlPath], ok: !failed, error: failed ? (out.error || '실패') : null });
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(out === undefined ? { ok: true } : out));
     return;
@@ -506,12 +725,23 @@ async function handle(req, res) {
     body = null;
   }
 
+  // 서버가 한 번에 한 모델만 올리니, 막아 둔 모델을 부르면 다른 사람의 모델과 캐시가 내려간다.
+  if (body && opts.blockModels && opts.blockModels.includes(body.model)) {
+    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: { message: `${body.model}은 이 서버에서 쓰지 않는다. qwen38을 쓴다.` } }));
+    return;
+  }
+
+  keepSystemPrompt(body).catch(() => {});
+
   // 스트리밍은 옵션을 켜야 마지막 조각에 토큰 수와 걸린 시간이 실린다.
   // 클라이언트가 안 켜도 기록이 남게 여기서 붙인다.
+  // 프롬프트 읽기 진행률도 달아 달라고 한다. 그 조각은 여기서 걷어 내고 화면에만 쓴다.
   if (body && body.stream) {
     const opt = Object.assign({}, body.stream_options, { include_usage: true });
-    if (JSON.stringify(opt) !== JSON.stringify(body.stream_options)) {
+    if (JSON.stringify(opt) !== JSON.stringify(body.stream_options) || body.return_progress !== true) {
       body.stream_options = opt;
+      body.return_progress = true;
       bodyBuf = Buffer.from(JSON.stringify(body), 'utf8');
     }
   }
@@ -573,6 +803,8 @@ function start(o) {
     control: o.control || null,
     // 벤치 결과와 진행 상황을 주는 함수.
     benchInfo: o.benchInfo || null,
+    // 이 서버에서 부르지 못하게 막는 모델 이름들.
+    blockModels: Array.isArray(o.blockModels) ? o.blockModels : [],
     limit: o.limit || 1,
     // 0을 주면 빈 포트를 골라 준다. 검사에서 쓴다.
     port: Number.isInteger(o.port) ? o.port : PORT,
@@ -636,7 +868,7 @@ function setLimit(n) {
 }
 
 module.exports = {
-  PORT, start, stop, status, address, onEvent, setPeers, setLimit, readLog, logDays,
+  PORT, start, stop, status, address, onEvent, setPeers, setLimit, readLog, logDays, warmPrompts, recordEvent,
   // 테스트에서 쓴다
   _internal: { promptOf, collectDelta, cleanAddress }
 };

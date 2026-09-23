@@ -97,6 +97,7 @@ function registerIpc() {
   ipcMain.handle('usage:bench', () => tunnel.benchInfo());
   ipcMain.handle('usage:benchRun', (_e, opts) => tunnel.benchRun(opts));
   ipcMain.handle('usage:benchCancel', () => tunnel.benchCancel());
+  ipcMain.handle('usage:benchApply', () => tunnel.benchApply());
   ipcMain.handle('usage:days', () => tunnel.serverLogDays());
   ipcMain.handle('usage:log', (_e, day) => tunnel.serverLog(day));
   ipcMain.handle('update:check', () => update.check());

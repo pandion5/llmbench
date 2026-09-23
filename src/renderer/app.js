@@ -1645,7 +1645,7 @@
   // ---------- ⑤ 하네스 (코딩 에이전트 CLI) ----------
 
   // 기본으로 권하는 하네스. 표에 표시만 한다.
-  var HARNESS_RECOMMENDED = 'qwen-code';
+  var HARNESS_RECOMMENDED = 'openclaude';
 
   function harnessLog(line) {
     var pre = $('#harness-log');

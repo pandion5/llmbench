@@ -60,7 +60,7 @@
     harness: {
       list: function () {
         return Promise.resolve([
-          { id: 'qwen-code', name: 'Qwen Code', note: 'Qwen3-Coder용 CLI', installed: true, version: '0.2.3' },
+          { id: 'openclaude', name: 'OpenClaude', note: 'Claude Code 계열 CLI', installed: true, version: '1.0.0' },
           { id: 'opencode', name: 'OpenCode', note: '터미널 TUI', installed: false, version: null }
         ]);
       },
@@ -82,7 +82,7 @@
       status: function () {
         return Promise.resolve({
           listening: true, error: null, limit: 1,
-          running: [{ id: 3, who: '박영범', address: '10.66.0.2', model: 'qwen38', waitMs: 0, runMs: 4200, tokens: 81 }],
+          running: [{ id: 3, who: '박영범', address: '10.66.0.2', model: 'qwen38', waitMs: 0, runMs: 4200, tokens: 0, stage: 'prompt', promptPct: 61, promptTokens: 13360 }],
           waiting: [{ id: 4, who: '노트북', address: '10.66.0.3', model: 'qwen38', waitMs: 3100, runMs: 0, tokens: 0 }]
         });
       },
@@ -116,6 +116,7 @@
         });
       },
       benchRun: function () { return Promise.resolve({ ok: true }); },
+      benchApply: function () { return Promise.resolve({ ok: true, ncmoe38: 44 }); },
       benchCancel: function () { return Promise.resolve({ ok: true }); },
       days: function () { return Promise.resolve(['2026-09-22', '2026-09-21']); },
       log: function () {

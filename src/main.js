@@ -292,6 +292,7 @@ function registerIpc() {
       upstream: server.BASE_URL,
       apiKey: await wireguard.apiKey(),
       logDir: path.join(cfg.installDir, 'logs', 'chat'),
+      blockModels: ['qwen36'],
       peers: (await wireguard.info()).peers,
       limit: Math.max(1, Number(cfg.slots) || 1),
       share: await wireguard.serve(),
@@ -311,13 +312,25 @@ function registerIpc() {
           return update.apply();
         },
         // 벤치는 몇 분 걸린다. 시작만 시키고 바로 답한다. 진행은 /llmbench/bench로 본다.
-        benchRun: async (from, body) => {
+        benchRun: async (from, body) => serialize(async () => {
           if (bench.busy()) throw new Error('벤치가 이미 돌고 있다');
           const opts = { model: (body && body.model) || 'qwen38', mode: (body && body.mode) || 'ncmoe' };
           console.log(`[제어] ${from.who}(${from.address})가 벤치 시작을 요청 (${opts.model}, ${opts.mode})`);
           benchError = null;
           runBench(opts).catch((e) => { benchError = e.message; });
           return { ok: true, started: opts };
+        }),
+        // CPU 전문가 층 벤치의 가장 빠른 값을 설정에 넣고 models.ini를 다시 쓴다.
+        // 서버가 켜져 있으면 다음에 켤 때 반영된다. 여기서 재기동은 안 한다.
+        benchApply: async (from) => {
+          const last = bench.last();
+          if (!last || last.mode !== 'ncmoe' || !last.ncmoe) throw new Error('적용할 CPU 전문가 층 결과가 없다');
+          if (last.model !== 'qwen38') throw new Error('3.6의 층 수는 설정에 없다. 3.8만 적용된다');
+          const v = last.ncmoe.best.ncmoe;
+          console.log(`[제어] ${from.who}(${from.address})가 CPU 전문가 층 ${v} 적용을 요청`);
+          const cfg = await config.set({ ncmoe38: v });
+          await install.stepPreset(cfg);
+          return { ok: true, ncmoe38: v };
         },
         benchCancel: async (from) => {
           console.log(`[제어] ${from.who}(${from.address})가 벤치 중지를 요청`);
@@ -335,11 +348,76 @@ function registerIpc() {
   }
 
   // llama-server를 띄운다. 프록시는 이미 떠 있으니 슬롯 수만 맞춘다.
+  // 서버 시작과 벤치 시작은 같은 잠금을 거친다. 둘이 겹치면 GPU를 같이 써서 둘 다 망가진다.
+  let transition = Promise.resolve();
+  function serialize(fn) {
+    const next = transition.then(fn, fn);
+    transition = next.catch(() => {});
+    return next;
+  }
+
   async function startServer() {
-    const cfg = await config.get();
-    const r = await server.start(cfg, { apiKey: await wireguard.apiKey() });
-    proxy.setLimit(Math.max(1, Number(cfg.slots) || 1));
-    return r;
+    return serialize(async () => {
+      if (bench.busy()) throw new Error('벤치가 돌고 있다. 끝난 뒤 켠다.');
+      const cfg = await config.get();
+      const apiKey = await wireguard.apiKey();
+      // 기존 models.ini에 시작 때 올릴 모델이 둘이면 서버가 뜨지 않는다. 다시 쓴다.
+      await migratePreset(cfg);
+      if (bench.busy()) throw new Error('벤치가 돌고 있다. 끝난 뒤 켠다.');
+      const r = await server.start(cfg, { apiKey, onReady: () => warmCache(cfg, apiKey) });
+      proxy.setLimit(Math.max(1, Number(cfg.slots) || 1));
+      return r;
+    });
+  }
+
+  // 예전 버전이 만든 models.ini는 3.6도 load-on-startup = true일 수 있다. --models-max 1과 충돌한다.
+  async function migratePreset(cfg) {
+    const file = path.join(cfg.installDir, 'models.ini');
+    let text = '';
+    try {
+      text = await fsp.readFile(file, 'utf8');
+    } catch (e) {
+      return;
+    }
+    const n = (text.match(/^load-on-startup\s*=\s*true/gm) || []).length;
+    if (n <= 1) return;
+    console.log(`[프리셋] 시작 때 올릴 모델이 ${n}개라 models.ini를 다시 쓴다`);
+    await install.stepPreset(cfg);
+  }
+
+  // 서버가 뜬 직후 보관해 둔 시스템 프롬프트를 모델별로 한 번 보낸다.
+  // 답은 1토큰만 받는다. 이걸로 프롬프트 캐시가 채워져 첫 사람이 바로 답을 받는다.
+  // 3.6은 시작할 때 올리도록 설정한 경우에만 한다. 아니면 20GB를 괜히 올린다.
+  async function warmCache(cfg, apiKey) {
+    const list = await proxy.warmPrompts();
+    const me = { at: '', who: '이 PC', address: '127.0.0.1' };
+    for (const w of list) {
+      // 3.6은 예열하지 않는다. 한 번에 한 모델만 올리는 서버라 3.8이 내려간다.
+      if (w.model !== 'qwen38') continue;
+      const t0 = Date.now();
+      const ev = Object.assign({}, me, { at: new Date().toISOString(), action: `캐시 예열 ${w.model}`, ok: true, error: null });
+      // 어느 하네스 것인지 알아볼 수 있게 시스템 프롬프트 첫 단어 몇 개를 붙인다.
+      const first = w.messages && w.messages[0] && typeof w.messages[0].content === 'string' ? w.messages[0].content : '';
+      if (first) ev.action += ` "${first.replace(/\s+/g, ' ').slice(0, 24)}…"`;
+      try {
+        const res = await fetch(`${server.BASE_URL}/v1/chat/completions`, {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json' }, apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          // 저장해 둔 요청 필드를 그대로 싣고 답 길이와 스트리밍만 바꾼다. 여기에 옵션을 더 붙이면
+          // 프롬프트 첫 줄이 바뀌어(생각 끄기 옵션이 그랬다) 캐시를 하나도 못 탄다.
+          body: JSON.stringify(Object.assign({}, w, { at: undefined, max_tokens: 1, stream: false }))
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const n = json.timings ? json.timings.prompt_n : 0;
+        ev.action += ` (${n}토큰, ${Math.round((Date.now() - t0) / 1000)}초)`;
+      } catch (e) {
+        ev.ok = false;
+        ev.error = e.message;
+      }
+      console.log(`[예열] ${ev.action}${ev.ok ? '' : ' 실패: ' + ev.error}`);
+      proxy.recordEvent(ev);
+    }
   }
 
   ipcMain.handle('server:start', () => startServer());
@@ -385,6 +463,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('monitor:snapshot', async () => sys.getSnapshot((await config.get()).installDir));
+
+  withLogsDir('bench-logs', (dir) => bench.restoreLast(dir)).catch((e) => console.error(`벤치 결과 복원 실패: ${e.message}`));
 
   // 화면에서도, 클라이언트가 터널 너머에서도 같은 길로 벤치를 돌린다.
   async function runBench(opts) {
