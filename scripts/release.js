@@ -71,15 +71,16 @@ sh('cmd', ['/c', 'npx', '@electron/packager', '.', 'llmbench',
   '--platform=win32', '--arch=x64', `--out=${packOut}`, '--asar=false', '--overwrite',
   // node_modules는 넣는다. node-pty가 네이티브라 빠지면 앱 안 터미널이 안 돈다.
   // packager가 devDependencies는 알아서 걷어낸다.
+  // 루트의 검수 문서(review-*.md)는 앱에 필요 없다. 공개 릴리스에 올라가지 않게 뺀다.
   '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/test', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
-  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs',
+  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs', '--ignore=^/review-',
   '--win32metadata.requested-execution-level=requireAdministrator',
   '--win32metadata.ProductName=llmbench', '--win32metadata.FileDescription=llmbench']);
 // 클라이언트 exe. 같은 코드에서 실행 파일 이름만 바꿔 뽑는다. entry.js가 이름으로 갈라 띄운다.
 sh('cmd', ['/c', 'npx', '@electron/packager', '.', 'llmbench-client',
   '--platform=win32', '--arch=x64', `--out=${packOut}`, '--asar=false', '--overwrite',
   '--ignore=^/dist', '--ignore=^/logs', '--ignore=^/test', '--ignore=^/scripts', '--ignore=^/\\.git', '--ignore=^/build',
-  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs',
+  '--ignore=^/start\\.bat', '--ignore=^/llmbench\\.vbs', '--ignore=^/review-',
   // 터널을 올리려면 관리자 권한이 필요하다. 서버 exe와 같게 매니페스트를 넣는다.
   '--win32metadata.requested-execution-level=requireAdministrator',
   '--win32metadata.ProductName=llmbench client', '--win32metadata.FileDescription=llmbench client']);

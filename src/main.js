@@ -405,7 +405,7 @@ function registerIpc() {
           headers: Object.assign({ 'Content-Type': 'application/json' }, apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           // 저장해 둔 요청 필드를 그대로 싣고 답 길이와 스트리밍만 바꾼다. 여기에 옵션을 더 붙이면
           // 프롬프트 첫 줄이 바뀌어(생각 끄기 옵션이 그랬다) 캐시를 하나도 못 탄다.
-          body: JSON.stringify(Object.assign({}, w, { at: undefined, max_tokens: 1, stream: false }))
+          body: JSON.stringify(Object.assign({}, w, { at: undefined, lead: undefined, max_tokens: 1, stream: false }))
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
@@ -417,7 +417,40 @@ function registerIpc() {
       }
       console.log(`[예열] ${ev.action}${ev.ok ? '' : ' 실패: ' + ev.error}`);
       proxy.recordEvent(ev);
+      if (ev.ok && typeof w.lead === 'string' && w.lead) await warmLead(w, apiKey, first);
     }
+  }
+
+  // 질문 앞 안내문 끝에 체크포인트를 하나 더 만든다. 새 세션 첫 질문이 안내문 1천 토큰을 다시 읽지 않고
+  // 질문만 읽는다. 안내문 뒤에 "A"와 "B"를 붙여 렌더링해 토큰으로 바꾸고, 갈라지는 곳까지를 보낸다.
+  // 바로 앞 예열 상태에서 이어 읽으니 안내문 길이만큼만 든다. 실패해도 앞 예열은 그대로 쓴다.
+  async function warmLead(w, apiKey, first) {
+    const t0 = Date.now();
+    const ev = { at: new Date().toISOString(), who: '이 PC', address: '127.0.0.1', action: `캐시 예열 ${w.model} 안내문`, ok: true, error: null };
+    if (first) ev.action += ` "${first.replace(/\s+/g, ' ').slice(0, 24)}…"`;
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
+    const post = async (p, body) => {
+      const res = await fetch(`${server.BASE_URL}${p}`, { method: 'POST', headers, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`${p} HTTP ${res.status}`);
+      return res.json();
+    };
+    const tokens = async (suffix) => {
+      const body = Object.assign({}, w, { at: undefined, lead: undefined, messages: [w.messages[0], { role: 'user', content: w.lead + suffix }] });
+      const { prompt } = await post('/apply-template', body);
+      return (await post('/tokenize', { model: w.model, content: prompt, add_special: true })).tokens;
+    };
+    try {
+      const body = proxy.leadWarmBody(w.model, await tokens('A'), await tokens('B'));
+      if (!body) throw new Error('안내문 끝을 찾지 못했다');
+      const json = await post('/completion', body);
+      const n = json.timings ? json.timings.prompt_n : 0;
+      ev.action += ` (${n}토큰, ${Math.round((Date.now() - t0) / 1000)}초)`;
+    } catch (e) {
+      ev.ok = false;
+      ev.error = e.message;
+    }
+    console.log(`[예열] ${ev.action}${ev.ok ? '' : ' 실패: ' + ev.error}`);
+    proxy.recordEvent(ev);
   }
 
   ipcMain.handle('server:start', () => startServer());

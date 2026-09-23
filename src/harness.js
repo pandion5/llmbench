@@ -28,10 +28,16 @@ const DEFS = [
     // 첨부 헤더는 요청마다 바뀌는 글을 시스템 프롬프트 맨 앞에 넣어 프롬프트 캐시를 깬다. 끈다.
     // 기본 타임아웃 2분이면 캐시 미스 때(프롬프트 전부 읽기 70~120초) 끊고 다시 보낸다. 10분으로 늘린다.
     // git 상태 스냅샷은 세션마다 달라서 새 세션 첫 턴이 캐시를 못 탄다. 커밋 안내문과 함께 뺀다.
+    // 터미널 제목을 짓는 요청이 매 턴 본 요청보다 먼저 간다. 로컬 모델은 64토큰 한도를 생각으로 다 써서
+    // 제목이 비고 다음 턴에 또 보낸다. 그동안 본 요청이 매 턴 4초쯤 기다려서 끈다.
+    // 자동 메모리를 켜면 시스템 프롬프트에 안내 3천여 토큰이 들어가고, 그 첫 줄에 계정 이름이 든 폴더 경로가 있다.
+    // 사용자마다 프롬프트가 앞쪽에서 갈라져 서로의 캐시 상태를 지우므로 끈다.
     extraEnv: {
       CLAUDE_CODE_USE_OPENAI: '1',
       CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
       CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: '1',
+      CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
       API_TIMEOUT_MS: '600000'
     },
     // 켜면 파일을 고칠 때마다 묻지 않는다. 대신 확인 없이 고치고 명령을 돌린다.
@@ -208,9 +214,14 @@ function opencodeConfig(ctx, model, baseUrl, apiKey) {
       }
     },
     model: `llama.cpp/${model}`,
+    // 스킬 목록은 시스템 프롬프트에 통째로 들어간다. 스킬이 많은 PC는 1만 3천 토큰이 넘어서
+    // 캐시가 빗나가면 1분 넘게 더 읽는다. 최상위 권한이라 plan과 build 모두 빠진다.
+    permission: { skill: 'deny' },
     agent: {
       plan: { model: `llama.cpp/${model}` },
-      build: { model: `llama.cpp/${model}` }
+      build: { model: `llama.cpp/${model}` },
+      // 첫 질문 앞에 세션 제목을 짓는 요청이 간다. 생각을 켜 두면 수백 토큰을 생각하느라 본 요청이 7~21초 기다린다.
+      title: { options: { reasoningEffort: 'none' } }
     }
   };
 }

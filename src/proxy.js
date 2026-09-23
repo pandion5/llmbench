@@ -48,7 +48,7 @@ const ACTION_NAMES = {
 
 // 하네스가 보내는 요청은 시스템 프롬프트와 도구 정의만 1만 토큰이 넘고 매번 같다.
 // 서버를 다시 켠 뒤 첫 사람이 1분 넘게 기다리지 않게, 하네스별 시스템 프롬프트와
-// 도구 정의를 파일에 두고 예열에 쓴다. 사람 질문은 남기지 않는다.
+// 도구 정의를 파일에 두고 예열에 쓴다. 사람 질문은 남기지 않고, 질문 앞 안내문이 있으면 그것도 남긴다.
 const WARM_MIN_CHARS = 4000;
 const WARM_MAX_FILES = 6;
 const warmSeen = new Map();
@@ -76,6 +76,41 @@ function warmMessages(messages) {
   return [messages[0], { role: 'user', content: '.' }];
 }
 
+// OpenClaude는 첫 사용자 메시지 하나에 도구 목록과 안내 블록, 질문, snip_id 안내를 이어 보낸다.
+// 질문 앞 안내문 약 1천 토큰은 새 세션에서도 같지만, 체크포인트가 사용자 메시지 시작점에만 있어서 매번 다시 읽었다.
+// 안내문을 남겨 두면 예열이 그 끝에 체크포인트를 만든다. 질문 바로 앞 안내 블록과 뒤따르는 공백까지가 안내문이다.
+const REMINDER_END = '</system-reminder>';
+function userLead(content) {
+  if (typeof content !== 'string') return '';
+  // 맨 끝 snip_id 블록은 질문 뒤에 붙으니 떼고 본다
+  const snip = content.lastIndexOf('\n<system-reminder>snip_id=');
+  const body = snip >= 0 ? content.slice(0, snip) : content;
+  const end = body.lastIndexOf(REMINDER_END);
+  if (end < 0) return '';
+  let i = end + REMINDER_END.length;
+  while (i < body.length && /\s/.test(body[i])) i++;
+  // 뒤에 질문이 없으면 어디까지가 안내문인지 알 수 없다
+  return i < body.length ? body.slice(0, i) : '';
+}
+
+// 안내문 끝에 체크포인트를 만드는 /completion 본문. tokensA와 tokensB는 안내문 뒤에 "A"와 "B"를 붙여
+// 렌더링한 토큰열이고, 둘이 처음 갈라지는 곳이 질문이 시작하는 곳이다. 서버는 요청 끝에서 4토큰 앞에
+// 체크포인트를 만들므로 그 뒤로 4토큰을 더 붙인다. 붙인 토큰은 다음 질문이 오면 버려지니 "A" 쪽 것을 그대로 쓴다.
+function leadWarmBody(model, tokensA, tokensB) {
+  if (!Array.isArray(tokensA) || !Array.isArray(tokensB)) return null;
+  let p = 0;
+  while (p < tokensA.length && p < tokensB.length && tokensA[p] === tokensB[p]) p++;
+  if (p === 0 || tokensA.length < p + 4) return null;
+  return {
+    model,
+    prompt: tokensA.slice(0, p + 4),
+    n_predict: 1,
+    cache_prompt: true,
+    // 채팅 요청처럼 사용자 메시지 시작점에도 체크포인트를 둔다
+    message_delimiters: [{ role: 'user', delimiter: '<|im_start|>user\n' }]
+  };
+}
+
 async function keepSystemPrompt(body) {
   const dir = warmDir();
   if (!dir || !body || !Array.isArray(body.messages) || typeof body.model !== 'string') return;
@@ -88,6 +123,8 @@ async function keepSystemPrompt(body) {
   if (lastUser !== 1 || body.messages[0].role !== 'system') return;
   // 질문이 빠지니 같은 하네스의 첫 턴은 내용이 같다. 새 세션마다 파일을 다시 쓰지 않는다.
   const head = { messages: warmMessages(body.messages) };
+  const lead = userLead(body.messages[1].content);
+  if (lead) head.lead = lead;
   for (const k of WARM_KEEP_FIELDS) if (body[k] !== undefined) head[k] = body[k];
   const text = JSON.stringify(head);
   const key = warmKey(body.model, body.messages);
@@ -159,6 +196,7 @@ async function warmList() {
         used: st.mtime.toISOString(),
         size: st.size,
         tools: Array.isArray(w.tools) ? w.tools.length : 0,
+        lead: typeof w.lead === 'string' ? w.lead.length : 0,
         system: msgs[0] ? textOf(msgs[0].content).slice(0, 60) : ''
       });
     } catch (e) {
@@ -868,7 +906,7 @@ function setLimit(n) {
 }
 
 module.exports = {
-  PORT, start, stop, status, address, onEvent, setPeers, setLimit, readLog, logDays, warmPrompts, recordEvent,
+  PORT, start, stop, status, address, onEvent, setPeers, setLimit, readLog, logDays, warmPrompts, recordEvent, leadWarmBody,
   // 테스트에서 쓴다
-  _internal: { promptOf, collectDelta, cleanAddress }
+  _internal: { promptOf, collectDelta, cleanAddress, userLead }
 };

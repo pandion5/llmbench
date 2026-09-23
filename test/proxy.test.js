@@ -272,6 +272,22 @@ function listen(server, port) {
   await fsp.writeFile(path.join(warmDirT, 'qwen38-old.json'), JSON.stringify({ model: 'qwen38', at: 'old', messages: [{ role: 'system', content: 'z'.repeat(5000) }, { role: 'user', content: '옛 질문' }] }), 'utf8');
   const old = (await proxy.warmPrompts()).find((w) => w.at === 'old');
   assert.strictEqual(old.messages[1].content, '.', old.messages[1].content);
+  // OpenClaude 첫 턴은 질문 앞 안내문을 따로 남긴다. 질문과 맨 끝 snip_id 블록은 남기지 않는다.
+  const lead = '<available-deferred-tools>\nRead\n</available-deferred-tools>\n<system-reminder>\n오늘 날짜\n</system-reminder>\n\n\n\n';
+  await post({ model: 'qwen38', messages: [{ role: 'system', content: 'o'.repeat(5000) }, { role: 'user', content: lead + '안내문 뒤 질문\n<system-reminder>snip_id=abc123; system-generated</system-reminder>' }], stream: true });
+  await new Promise((r) => setTimeout(r, 100));
+  const oc = (await proxy.warmPrompts()).find((w) => w.messages[0].content[0] === 'o');
+  assert.strictEqual(oc.lead, lead, JSON.stringify(oc.lead));
+  assert.strictEqual(oc.messages[1].content, '.');
+  assert.strictEqual((await proxy.warmPrompts()).find((w) => w.messages[0].content[0] === 'x').lead, undefined, '안내문 없는 첫 턴에 안내문이 남았다');
+  assert.strictEqual((await call('GET', '/llmbench/warm')).body.find((w) => w.system[0] === 'o').lead, lead.length);
+  // 질문만 있거나 안내 블록 뒤가 비어 있으면 안내문이 없다.
+  assert.strictEqual(proxy._internal.userLead('질문만\n<system-reminder>snip_id=x</system-reminder>'), '');
+  assert.strictEqual(proxy._internal.userLead('<system-reminder>a</system-reminder>\n'), '');
+  // 정밀 예열 본문은 처음 갈라지는 곳 뒤로 4토큰을 더 싣는다.
+  assert.deepStrictEqual(proxy.leadWarmBody('qwen38', [1, 2, 3, 9, 8, 7, 6, 5], [1, 2, 3, 4, 8]).prompt, [1, 2, 3, 9, 8, 7, 6]);
+  assert.strictEqual(proxy.leadWarmBody('qwen38', [1, 2, 3, 9], [1, 2, 3, 4]), null, '뒤에 붙일 토큰이 모자라다');
+  assert.strictEqual(proxy.leadWarmBody('qwen38', [5, 6, 7, 8, 9], [1, 2]), null, '겹치는 앞부분이 없다');
 
   // 6-4) 벤치 시작은 본문을 그대로 넘기고, 조회는 결과를 준다.
   const br = await new Promise((resolve) => {
